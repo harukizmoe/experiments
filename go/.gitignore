@@ -1,0 +1,2 @@
+# Langfuse OTLP 实验的本地凭证配置不应进入版本库。
+experiments/langfuse-otel/config.yaml
