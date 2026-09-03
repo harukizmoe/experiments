@@ -1,30 +1,25 @@
 # Langfuse OTLP 实验
 
-这个实验验证 Go 程序通过 OpenTelemetry SDK 将 Trace 发送到 Langfuse，包含确定性的同步 ReAct Agent 和模拟 Asynq 的跨进程传播。
+这个实验验证 Go 程序通过 OpenTelemetry SDK 将确定性的同步 ReAct Agent Trace 发送到 Langfuse，并独立测试 JSON 队列边界上的 Trace Context 传播。
 
 ## 链路
 
 ```text
 experiment.request (chain)
-├── agent.execute (agent)
-│   ├── agent.round.1 (chain)
-│   │   ├── agent.generation.1 (generation)
-│   │   └── agent.tool.knowledge_search (tool)
-│   │       └── retrieve (retriever)
-│   └── agent.round.2 (chain)
-│       └── agent.generation.2 (generation)
-├── retrieve
-├── generation
-├── enqueue
-└── worker.process
-    └── generation.async
+└── agent.execute (agent)
+    ├── agent.round.1 (chain)
+    │   ├── agent.generation.1 (generation)
+    │   └── agent.tool.knowledge_search (tool)
+    │       └── retrieve (retriever)
+    └── agent.round.2 (chain)
+        └── agent.generation.2 (generation)
 ```
 
 Agent 使用固定状态机：第一轮 Generation 请求 `knowledge_search`，工具返回固定知识片段；第二轮 Generation 读取该结果并生成最终答案。Agent 最多执行三轮，达到上限、工具输入无效或工具失败时返回错误并结束已创建的 Span。
 
 `langfuse.observation.type` 分别使用 `agent`、`chain`、`generation`、`tool` 和 `retriever` 表示节点角色。所有 Agent 节点都从父 `context.Context` 创建，因此共享 `experiment.request` 的 Trace ID。
 
-`enqueue` 将当前 W3C `traceparent` 写入 JSON；`worker.process` 从 JSON 恢复上下文。因此 Worker 不直接共享 Go 的 `context.Context`，但仍能加入原 Trace。
+JSON 队列传播测试将 W3C `traceparent` 写入 JSON 后再恢复 Context，验证跨进程边界不会产生孤立 Trace；这条契约与 Agent 运行链路保持独立。
 
 ## 配置
 
@@ -65,8 +60,8 @@ go run ./experiments/langfuse-otel
 
 ## 说明
 
-- Agent 和原有 `generation` 都使用固定的 `demo-model`，不调用真实 LLM，也不会产生模型费用。
+- Agent 使用固定的 `demo-model`，不调用真实 LLM，也不会产生模型费用。
 - 两轮 Generation 记录 Prompt、Completion、结束原因以及 input/output/total token 属性。
 - `knowledge_search` 使用固定短文本，不访问数据库、HTTP 或真实知识库。
-- 现有 JSON 队列传播示例保持独立，没有把 Agent 轮次放入异步 Worker。
+- JSON 队列传播契约由独立单元测试覆盖，不混入 Agent 的运行链路。
 - 实验没有 Agent 注册表、通用 Tool 接口、模型适配层或运行时配置项。
