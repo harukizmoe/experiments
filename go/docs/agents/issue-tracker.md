@@ -1,30 +1,31 @@
-# 问题追踪器：本地 Markdown
+# 问题追踪器：GitHub
 
-本项目的问题与规格文档存放在 `.scratch/` 下。
+本项目的问题与规格文档使用 GitHub Issues 管理，统一通过 `gh` CLI 操作。
 
 ## 约定
 
-- 每个功能使用一个目录：`.scratch/<feature-slug>/`
-- 规格文档：`.scratch/<feature-slug>/spec.md`
-- 实现任务：`.scratch/<feature-slug>/issues/<NN>-<slug>.md`
-- 任务编号从 `01` 开始，不创建合并后的单一任务文件
-- 每个任务文件顶部附近使用 `Status:` 记录状态
-- 评论与讨论追加在文件底部的 `## Comments` 标题下
+- 创建 Issue：`gh issue create --title "..." --body "..."`
+- 读取 Issue：`gh issue view <number> --comments`
+- 列出 Issue：`gh issue list --state open`
+- 添加评论：`gh issue comment <number> --body "..."`
+- 添加或移除标签：`gh issue edit <number> --add-label "..."` / `--remove-label "..."`
+- 关闭 Issue：`gh issue close <number> --reason completed`
+- GitHub 仓库：`harukizmoe/go-exp`
 
 ## 发布到问题追踪器
 
-创建 `.scratch/<feature-slug>/` 目录，并在其中写入对应文档。
+当技能要求发布问题或任务时，创建 GitHub Issue，不再新增 `.scratch/<feature>/issues/` 任务文件。
 
-## 获取任务
-
-读取用户提供路径或任务编号对应的文件。
+规格文档可以继续保存在仓库中的 Markdown 文件内，并在 Issue 正文中链接对应路径。
 
 ## Wayfinding
 
-- Map：`.scratch/<effort>/map.md`
-- 子任务：`.scratch/<effort>/issues/NN-<slug>.md`
-- 子任务使用 `Type:` 记录类型：`research`、`prototype`、`grilling` 或 `task`
-- 子任务使用 `Status:` 记录状态：`claimed` 或 `resolved`
-- `Blocked by:` 记录阻塞它的任务编号
-- 认领任务前先将其状态设为 `claimed`
-- 解决任务时追加 `## Answer`，设置状态为 `resolved`，并将上下文指针追加到 map 的 Decisions-so-far
+- Map：创建一个带 `wayfinder:map` 标签的 GitHub Issue。
+- 子任务：创建独立 GitHub Issue；优先使用 GitHub sub-issues 关联 Map。
+- 阻塞关系：优先使用 GitHub 原生 Issue dependencies；不支持时在子任务正文顶部记录 `Blocked by: #<n>`。
+- 认领任务：`gh issue edit <n> --add-assignee @me`。
+- 解决任务：先追加答案评论，再关闭 Issue，并在 Map 的 Decisions-so-far 中记录上下文链接。
+
+## Pull requests
+
+PR 不作为 triage 请求来源。实现 Issue 时，PR 正文使用 `Closes #<n>` 或 `Fixes #<n>`，使合入后 GitHub 自动关闭对应 Issue。

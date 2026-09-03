@@ -2,7 +2,7 @@
 
 ### Issue tracker
 
-问题与规格文档使用本地 Markdown，存放于 `.scratch/<feature>/`。详见 `docs/agents/issue-tracker.md`。
+问题与规格文档使用 GitHub Issues 管理，通过 `gh` CLI 操作。详见 `docs/agents/issue-tracker.md`。
 
 ### Triage labels
 
