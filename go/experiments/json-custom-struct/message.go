@@ -59,7 +59,6 @@ type ToolResultMessage struct {
 func (ToolResultMessage) isMessage()     {}
 func (m ToolResultMessage) Role() string { return RoleToolResult }
 
-
 type MessageList []Message
 
 func (ml *MessageList) UnmarshalJSON(data []byte) error {
@@ -78,7 +77,6 @@ func (ml *MessageList) UnmarshalJSON(data []byte) error {
 	*ml = out
 	return nil
 }
-
 
 func decodeMessage(raw json.RawMessage) (Message, error) {
 	var probe struct {

@@ -1,2 +1,6 @@
 # Langfuse OTLP 实验的本地凭证配置不应进入版本库。
 experiments/langfuse-otel/config.yaml
+experiments/agent-trace/.env
+
+# Agent 评估报告是本地生成的运行产物，可能包含模型捕获内容。
+experiments/agent-trace/eval-results/

@@ -5,7 +5,6 @@ import (
 	"testing"
 )
 
-
 func TestMessages(t *testing.T) {
 	raw := []byte(`[
 		{"role": "user", "content": [
