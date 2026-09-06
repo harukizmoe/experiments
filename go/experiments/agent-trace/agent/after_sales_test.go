@@ -81,9 +81,13 @@ func TestAgentRunsAfterSalesToolSequence(t *testing.T) {
 		t.Fatalf("New() error = %v", err)
 	}
 
-	result, err := a.Run(context.Background(), "请判断 A100 是否可以退货并估算退款金额。")
+	result, _, err := a.RunWithHistory(
+		context.Background(),
+		"请判断 A100 是否可以退货并估算退款金额。",
+		[]llm.Message{{Role: llm.RoleSystem, Content: "test system prompt"}},
+	)
 	if err != nil {
-		t.Fatalf("Run() error = %v", err)
+		t.Fatalf("RunWithHistory() error = %v", err)
 	}
 
 	wantNames := []string{

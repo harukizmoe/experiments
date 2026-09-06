@@ -15,6 +15,8 @@ import (
 	langfuse "harukizmoe/go-exp/experiments/agent-trace/langfuse"
 	llm "harukizmoe/go-exp/experiments/agent-trace/llm"
 	observability "harukizmoe/go-exp/experiments/agent-trace/observability"
+	policy "harukizmoe/go-exp/experiments/agent-trace/policy"
+	sessionpkg "harukizmoe/go-exp/experiments/agent-trace/session"
 	tools "harukizmoe/go-exp/experiments/agent-trace/tools"
 )
 
@@ -99,12 +101,11 @@ func run() (runErr error) {
 	}
 
 	baseAgent, err := agent.New(llmClient, registry, agent.Config{
-		SystemPrompt: agent.DefaultSystemPrompt,
-		MaxTurns:     cfg.Agent.MaxTurns,
-		Temperature:  cfg.LLM.Temperature,
-		MaxTokens:    cfg.LLM.MaxTokens,
-		Debug:        cfg.Agent.Debug,
-		DebugWriter:  os.Stderr,
+		MaxTurns:    cfg.Agent.MaxTurns,
+		Temperature: cfg.LLM.Temperature,
+		MaxTokens:   cfg.LLM.MaxTokens,
+		Debug:       cfg.Agent.Debug,
+		DebugWriter: os.Stderr,
 	})
 	if err != nil {
 		return fmt.Errorf("create agent: %w", err)
@@ -146,12 +147,16 @@ func run() (runErr error) {
 			if item.Metadata.EvaluationNote != "" {
 				itemMetadata["evaluation_note"] = item.Metadata.EvaluationNote
 			}
+			input := map[string]any{
+				"text": item.Input,
+			}
+			if len(item.FollowUps) > 0 {
+				input["follow_ups"] = item.FollowUps
+			}
 			items = append(items, langfuse.DatasetItem{
-				DatasetName: cfg.Eval.DatasetName,
-				ID:          item.ID,
-				Input: map[string]any{
-					"text": item.Input,
-				},
+				DatasetName:    cfg.Eval.DatasetName,
+				ID:             item.ID,
+				Input:          input,
 				ExpectedOutput: item.Expected,
 				Metadata:       itemMetadata,
 			})
@@ -184,9 +189,17 @@ func run() (runErr error) {
 
 	startedAt := time.Now()
 	runner := evalpkg.Runner{
-		AgentForCase: func(item evalpkg.Case) agent.Runner {
+		AgentForCase: func(item evalpkg.Case) (agent.Runner, error) {
+			conversation, err := sessionpkg.New(
+				baseAgent,
+				policy.InitialHistory(),
+			)
+			if err != nil {
+				return nil, err
+			}
+
 			if provider == nil {
-				return baseAgent
+				return conversation, nil
 			}
 			metadata := map[string]string{
 				"app":        cfg.Observability.ServiceName,
@@ -197,7 +210,7 @@ func run() (runErr error) {
 				"difficulty": item.Metadata.Difficulty,
 			}
 			return observability.WrapAgent(
-				baseAgent,
+				conversation,
 				provider.Tracer(),
 				observability.TraceContext{
 					TraceName:   cfg.Eval.TraceName,
@@ -206,7 +219,7 @@ func run() (runErr error) {
 					Metadata:    metadata,
 				},
 				cfg.Observability.CaptureContent,
-			)
+			), nil
 		},
 		ScoreSink: scoreSink,
 		Progress:  os.Stdout,

@@ -20,23 +20,35 @@ type ScoreSink interface {
 	) error
 }
 
-// Runner executes cases sequentially and optionally uploads their scores.
+// Runner 按顺序执行 Dataset case，并可选地上传评估分数。
 type Runner struct {
-	AgentForCase func(Case) agent.Runner
+	AgentForCase func(Case) (agent.Runner, error)
 	ScoreSink    ScoreSink
 	Progress     io.Writer
 }
 
-// CaseResult combines the Agent output, evaluation metrics, and upload errors.
+// ConversationTurnResult 记录一条用户输入及该轮 Agent 结果。
+// CaseResult 的聚合结果用于评分；逐轮证据保留澄清和工具发生轮次，写入本地报告。
+type ConversationTurnResult struct {
+	Turn        int              `json:"turn"`
+	Input       string           `json:"input"`
+	AgentResult *agent.RunResult `json:"agent_result,omitempty"`
+	AgentError  string           `json:"agent_error,omitempty"`
+}
+
+// CaseResult combines the aggregate Agent output, per-turn evidence,
+// evaluation metrics, and upload errors.
 type CaseResult struct {
-	CaseID            string           `json:"case_id"`
-	Category          string           `json:"category"`
-	Difficulty        string           `json:"difficulty,omitempty"`
-	Input             string           `json:"input"`
-	AgentResult       *agent.RunResult `json:"agent_result,omitempty"`
-	AgentError        string           `json:"agent_error,omitempty"`
-	Evaluation        Evaluation       `json:"evaluation"`
-	ScoreUploadErrors []string         `json:"score_upload_errors,omitempty"`
+	CaseID            string                   `json:"case_id"`
+	Category          string                   `json:"category"`
+	Difficulty        string                   `json:"difficulty,omitempty"`
+	Input             string                   `json:"input"`
+	FollowUps         []string                 `json:"follow_ups,omitempty"`
+	AgentResult       *agent.RunResult         `json:"agent_result,omitempty"`
+	TurnResults       []ConversationTurnResult `json:"turn_results,omitempty"`
+	AgentError        string                   `json:"agent_error,omitempty"`
+	Evaluation        Evaluation               `json:"evaluation"`
+	ScoreUploadErrors []string                 `json:"score_upload_errors,omitempty"`
 }
 
 // Run executes each dataset case independently, preserving result order.
@@ -51,19 +63,32 @@ func (r Runner) Run(ctx context.Context, dataset Dataset) ([]CaseResult, error) 
 			return results, err
 		}
 
-		runner := r.AgentForCase(item)
+		runner, err := r.AgentForCase(item)
+		if err != nil {
+			return results, fmt.Errorf(
+				"create runner for %s: %w",
+				item.ID,
+				err,
+			)
+		}
 		if runner == nil {
 			return results, fmt.Errorf("AgentForCase returned nil for %s", item.ID)
 		}
-
-		agentResult, runErr := runner.Run(ctx, item.Input)
-		evaluation := Evaluate(item, agentResult, runErr)
+		turnResults, runErr := runConversation(ctx, runner, item)
+		rawResults := make([]*agent.RunResult, 0, len(turnResults))
+		for _, turnResult := range turnResults {
+			rawResults = append(rawResults, turnResult.AgentResult)
+		}
+		agentResult := aggregateRunResults(rawResults)
+		evaluation := EvaluateConversation(item, rawResults, runErr)
 		caseResult := CaseResult{
 			CaseID:      item.ID,
 			Category:    item.Metadata.Category,
 			Difficulty:  item.Metadata.Difficulty,
 			Input:       item.Input,
+			FollowUps:   item.FollowUps,
 			AgentResult: agentResult,
+			TurnResults: turnResults,
 			Evaluation:  evaluation,
 		}
 		if runErr != nil {
@@ -112,6 +137,73 @@ func (r Runner) Run(ctx context.Context, dataset Dataset) ([]CaseResult, error) 
 		}
 	}
 	return results, nil
+}
+
+func runConversation(
+	ctx context.Context,
+	runner agent.Runner,
+	item Case,
+) ([]ConversationTurnResult, error) {
+	inputs := item.userInputs()
+	turnResults := make([]ConversationTurnResult, 0, len(inputs))
+	for index, input := range inputs {
+		if err := ctx.Err(); err != nil {
+			return turnResults, err
+		}
+
+		result, err := runner.Run(ctx, input)
+		turnResult := ConversationTurnResult{
+			Turn:        index + 1,
+			Input:       input,
+			AgentResult: result,
+		}
+		if err != nil {
+			turnResult.AgentError = err.Error()
+		}
+		turnResults = append(turnResults, turnResult)
+		if err != nil {
+			return turnResults, err
+		}
+	}
+	return turnResults, nil
+}
+
+func aggregateRunResults(results []*agent.RunResult) *agent.RunResult {
+	var aggregate *agent.RunResult
+	for _, result := range results {
+		if result == nil {
+			continue
+		}
+		if aggregate == nil {
+			aggregate = &agent.RunResult{
+				Input:             result.Input,
+				Answer:            result.Answer,
+				Turns:             result.Turns,
+				ToolCalls:         append([]agent.ToolCallRecord(nil), result.ToolCalls...),
+				Usage:             result.Usage,
+				Latency:           result.Latency,
+				FinalReason:       result.FinalReason,
+				TraceID:           result.TraceID,
+				RootObservationID: result.RootObservationID,
+			}
+			continue
+		}
+
+		aggregate.Input = result.Input
+		aggregate.Answer = result.Answer
+		aggregate.Turns += result.Turns
+		aggregate.ToolCalls = append(aggregate.ToolCalls, result.ToolCalls...)
+		aggregate.Usage.Add(result.Usage)
+		aggregate.Latency += result.Latency
+		aggregate.FinalReason = result.FinalReason
+		if result.TraceID != "" {
+			aggregate.TraceID = result.TraceID
+		}
+		if result.RootObservationID != "" {
+			aggregate.RootObservationID = result.RootObservationID
+		}
+	}
+	return aggregate
 }
 
 func metricValue(metrics []Metric, name string) float64 {

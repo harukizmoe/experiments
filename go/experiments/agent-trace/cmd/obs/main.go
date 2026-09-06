@@ -15,6 +15,8 @@ import (
 	config "harukizmoe/go-exp/experiments/agent-trace/config"
 	llm "harukizmoe/go-exp/experiments/agent-trace/llm"
 	observability "harukizmoe/go-exp/experiments/agent-trace/observability"
+	policy "harukizmoe/go-exp/experiments/agent-trace/policy"
+	sessionpkg "harukizmoe/go-exp/experiments/agent-trace/session"
 	tools "harukizmoe/go-exp/experiments/agent-trace/tools"
 )
 
@@ -128,12 +130,11 @@ func run() (returnErr error) {
 		llmClient,
 		registry,
 		agent.Config{
-			SystemPrompt: agent.DefaultSystemPrompt,
-			MaxTurns:     cfg.Agent.MaxTurns,
-			Temperature:  cfg.LLM.Temperature,
-			MaxTokens:    cfg.LLM.MaxTokens,
-			Debug:        cfg.Agent.Debug,
-			DebugWriter:  os.Stderr,
+			MaxTurns:    cfg.Agent.MaxTurns,
+			Temperature: cfg.LLM.Temperature,
+			MaxTokens:   cfg.LLM.MaxTokens,
+			Debug:       cfg.Agent.Debug,
+			DebugWriter: os.Stderr,
 		},
 	)
 	if err != nil {
@@ -143,11 +144,18 @@ func run() (returnErr error) {
 		)
 	}
 
-	var runner agent.Runner = baseAgent
+	conversation, err := sessionpkg.New(
+		baseAgent,
+		policy.InitialHistory(),
+	)
+	if err != nil {
+		return fmt.Errorf("create session: %w", err)
+	}
+	var runner agent.Runner = conversation
 
 	if cfg.Observability.Enabled {
 		runner = observability.WrapAgent(
-			baseAgent,
+			conversation,
 			provider.Tracer(),
 			observability.TraceContext{
 				TraceName:   cfg.Observability.TraceName,

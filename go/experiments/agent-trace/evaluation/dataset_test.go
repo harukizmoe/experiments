@@ -42,4 +42,20 @@ func TestPhase3Dataset(t *testing.T) {
 			}
 		}
 	}
+	var foundMultiTurn bool
+	for _, item := range dataset.Cases {
+		if item.ID != "after-sales-001" {
+			continue
+		}
+		foundMultiTurn = true
+		if len(item.FollowUps) != 1 || len(item.Expected.TurnExpectations) != 2 {
+			t.Fatalf("after-sales-001 multi-turn contract = follow_ups=%d turn_expectations=%d", len(item.FollowUps), len(item.Expected.TurnExpectations))
+		}
+		if len(item.Expected.TurnExpectations[0].RequiredTools) != 0 || len(item.Expected.TurnExpectations[1].RequiredTools) != 4 {
+			t.Fatalf("after-sales-001 turn tool contract = %+v", item.Expected.TurnExpectations)
+		}
+	}
+	if !foundMultiTurn {
+		t.Fatal("after-sales-001 case not found")
+	}
 }

@@ -12,7 +12,7 @@
 
 | 实验 | 内容 | 运行方式 |
 | --- | --- | --- |
-| [`agent-trace`](experiments/agent-trace) | 带计算器、订单和商品工具的多轮 Agent；支持 OpenAI-compatible API、OpenTelemetry/Langfuse Trace，以及本地评测和评分上传。 | `go run ./experiments/agent-trace/cmd/obs` |
+| [`agent-trace`](experiments/agent-trace) | 带计算器、订单和商品工具的多轮售后咨询 Agent；支持 OpenAI-compatible API、OpenTelemetry/Langfuse Trace，以及默认仅落地本地的确定性评测。 | `go run ./experiments/agent-trace/cmd/obs` |
 | [`json-custom-struct`](experiments/json-custom-struct) | 根据 `role` 判别 JSON 消息类型，并验证缺少或不支持的消息类型。 | `go test ./experiments/json-custom-struct` |
 | [`langfuse-otel`](experiments/langfuse-otel) | 使用固定输入演示 ReAct Agent 的 Span 层级、Generation/Tool/Retriever 观测类型和 W3C Trace Context 传播。 | `go run ./experiments/langfuse-otel` |
 
@@ -48,6 +48,16 @@ go run ./experiments/agent-trace/cmd/eval
 ```
 
 评测报告默认写入 `experiments/agent-trace/eval-results/latest.json`。该目录已被 Git 忽略；不要提交包含模型输入输出或凭证的本地产物。
+
+评测默认不上传 Dataset 或评估分数；如需完全关闭观测数据出网，将 `LANGFUSE_ENABLED` 设为 `false`。一次本地多轮评测可显式使用：
+
+```bash
+EVAL_UPLOAD_DATASET=false \
+EVAL_UPLOAD_SCORES=false \
+LANGFUSE_ENABLED=false \
+EVAL_REPORT_PATH=experiments/agent-trace/eval-results/multi-turn-local.json \
+go run ./experiments/agent-trace/cmd/eval
+```
 
 ### 运行 `langfuse-otel`
 

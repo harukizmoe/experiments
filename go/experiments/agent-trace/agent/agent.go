@@ -17,55 +17,34 @@ var ErrMaxTurnsExceeded = errors.New(
 	"agent max turns exceeded",
 )
 
-const DefaultSystemPrompt = `You are a concise and reliable assistant with access to tools.
-Use a relevant tool whenever the requested fact is provided by that tool instead of guessing.
-Do not invent tool results.
-Use tools only when they are helpful.
-For a read-only return-eligibility or refund-estimate request, use get_order_details first, then get_product with its product_id, then get_return_policy. Determine eligibility from those returned facts; only when the order is eligible, use calculator for the original product price multiplied by quantity.
-For an ineligible order, do not call calculator; report a zero estimated refund.
-When the user corrects an identifier, use the corrected identifier with the relevant lookup tool instead of merely acknowledging the correction.
-After receiving a tool result, answer based on that result.
-Only provide an estimate and explanation; never claim that a refund, cancellation, or other state change was executed.
-If a tool reports that an item was not found, say that it was not found instead of making up data.`
-
+// Config 控制 Agent Loop 的执行上限、模型参数和调试输出。
 type Config struct {
-	SystemPrompt string
-	MaxTurns     int
-	Temperature  float64
-	MaxTokens    int
-	Debug        bool
-	DebugWriter  io.Writer
+	MaxTurns    int
+	Temperature float64
+	MaxTokens   int	
+	Debug       bool
+	DebugWriter io.Writer
 }
 
+// Agent 负责一次用户轮次内的 LLM 与工具协作，不持有会话历史。
 type Agent struct {
 	llm    llm.Client
 	tools  *tools.Registry
 	config Config
 }
 
-func New(
-	client llm.Client,
-	registry *tools.Registry,
-	cfg Config,
-) (*Agent, error) {
+// New 创建一个不持有对话状态的 Agent 执行器。
+func New(client llm.Client, registry *tools.Registry, cfg Config) (*Agent, error) {
 	if client == nil {
-		return nil, errors.New(
-			"LLM client is required",
-		)
+		return nil, errors.New("LLM client is required")
 	}
 
 	if registry == nil {
-		return nil, errors.New(
-			"tool registry is required",
-		)
+		return nil, errors.New("tool registry is required")
 	}
 
 	if cfg.MaxTurns <= 0 {
 		cfg.MaxTurns = 8
-	}
-
-	if cfg.SystemPrompt == "" {
-		cfg.SystemPrompt = DefaultSystemPrompt
 	}
 
 	if cfg.MaxTokens <= 0 {
@@ -83,26 +62,39 @@ func New(
 	}, nil
 }
 
-func (a *Agent) Run(
-	ctx context.Context,
-	input string,
-) (*RunResult, error) {
+// RunWithHistory 执行一个用户轮次，并返回成功后的下一份消息历史。
+// history 由调用方拥有；成功时 nextHistory 的所有权转移给调用方，失败时不提交本轮消息。
+func (a *Agent) RunWithHistory(ctx context.Context, input string, history []llm.Message) (*RunResult, []llm.Message, error) {
+	localHistory := make(
+		[]llm.Message,
+		len(history),
+		len(history)+1,
+	)
+	copy(localHistory, history)
+
+	result, err := a.run(ctx, input, &localHistory)
+	if err != nil {
+		return result, nil, err
+	}
+
+	return result, localHistory, nil
+}
+
+func (a *Agent) run(ctx context.Context, input string, history *[]llm.Message) (result *RunResult, runErr error) {
 	started := time.Now()
 
-	result := &RunResult{
+	result = &RunResult{
 		Input: input,
 	}
 
-	messages := []llm.Message{
-		{
-			Role:    llm.RoleSystem,
-			Content: a.config.SystemPrompt,
-		},
-		{
-			Role:    llm.RoleUser,
-			Content: input,
-		},
-	}
+	// 本轮只在局部历史上执行；失败时保持调用方传入的 history 不变。
+	// 成功时才把完整的 assistant/tool 消息提交给 RunWithHistory。
+	messages := append(*history, llm.Message{Role: llm.RoleUser, Content: input})
+	defer func() {
+		if runErr == nil {
+			*history = messages
+		}
+	}()
 
 	for turn := 1; turn <= a.config.MaxTurns; turn++ {
 		// 每轮开始前响应调用方取消，避免在已结束的请求上继续调用 LLM。
@@ -111,25 +103,16 @@ func (a *Agent) Run(
 			return result, err
 		}
 
-		a.debugf(
-			"[agent] turn=%d\n",
-			turn,
-		)
+		a.debugf("[agent] turn=%d\n", turn)
 
-		a.debugf(
-			"[llm.request] messages=%d tools=%d\n",
-			len(messages),
-			len(a.tools.Definitions()),
-		)
+		a.debugf("[llm.request] messages=%d tools=%d\n", len(messages), len(a.tools.Definitions()))
 
-		response, err := a.llm.Generate(
-			ctx,
-			llm.Request{
-				Messages:    messages,
-				Tools:       a.tools.Definitions(),
-				Temperature: a.config.Temperature,
-				MaxTokens:   a.config.MaxTokens,
-			},
+		response, err := a.llm.Generate(ctx, llm.Request{
+			Messages:    messages,
+			Tools:       a.tools.Definitions(),
+			Temperature: a.config.Temperature,
+			MaxTokens:   a.config.MaxTokens,
+		},
 		)
 		// LLM 可能在调用方取消后才返回；丢弃本轮响应，避免继续规划。
 		if ctxErr := ctx.Err(); ctxErr != nil {
@@ -137,29 +120,16 @@ func (a *Agent) Run(
 			return result, ctxErr
 		}
 		if err != nil {
-			result.Latency = time.Since(
-				started,
-			)
-
-			return result, fmt.Errorf(
-				"LLM turn %d: %w",
-				turn,
-				err,
-			)
+			result.Latency = time.Since(started)
+			return result, fmt.Errorf("LLM turn %d: %w", turn, err)
 		}
 
 		result.Turns++
-
-		result.Usage.Add(
-			response.Usage,
-		)
+		result.Usage.Add(response.Usage)
 
 		// 非常重要：
 		// assistant tool_calls message 本身必须进入上下文。
-		messages = append(
-			messages,
-			response.Message,
-		)
+		messages = append(messages, response.Message)
 
 		a.debugf(
 			"[llm.response] finish_reason=%s content=%q tool_calls=%d tokens=%d\n",
@@ -169,55 +139,32 @@ func (a *Agent) Run(
 			response.Usage.TotalTokens,
 		)
 
-		// 没有 tool call，说明 Agent Loop 结束。
+		// 没有 tool call，说明本轮 Agent Loop 结束。
 		if len(response.Message.ToolCalls) == 0 {
 			result.Answer = response.Message.Content
-
 			result.FinalReason = response.FinishReason
-
 			result.Latency = time.Since(started)
-
 			return result, nil
 		}
 
 		for _, call := range response.Message.ToolCalls {
-
 			if err := ctx.Err(); err != nil {
 				result.Latency = time.Since(started)
-
 				return result, err
 			}
 
-			a.debugf(
-				"[tool.call] name=%s args=%s\n",
-				call.Name,
-				string(call.Arguments),
-			)
+			a.debugf("[tool.call] name=%s args=%s\n", call.Name, string(call.Arguments))
 
 			toolStarted := time.Now()
-
-			toolResult, toolErr := a.tools.Execute(
-				ctx,
-				call,
-			)
-
+			toolResult, toolErr := a.tools.Execute(ctx, call)
 			latency := time.Since(toolStarted)
-
 			record := ToolCallRecord{
-				Turn: turn,
-
-				ID: call.ID,
-
-				Name: call.Name,
-
-				Arguments: append(
-					json.RawMessage(nil),
-					call.Arguments...,
-				),
-
-				Result: toolResult,
-
-				Latency: latency,
+				Turn:      turn,
+				ID:        call.ID,
+				Name:      call.Name,
+				Arguments: append(json.RawMessage(nil), call.Arguments...),
+				Result:    toolResult,
+				Latency:   latency,
 			}
 
 			content := toolResult
@@ -226,27 +173,11 @@ func (a *Agent) Run(
 			// 将 error 作为 tool result 回传给模型，
 			// 允许模型自己恢复。
 			if toolErr != nil {
-
 				record.Error = toolErr.Error()
-
-				content = toolErrorJSON(
-					call.Name,
-					toolErr,
-				)
-
-				a.debugf(
-					"[tool.error] name=%s error=%q\n",
-					call.Name,
-					toolErr.Error(),
-				)
-
+				content = toolErrorJSON(call.Name, toolErr)
+				a.debugf("[tool.error] name=%s error=%q\n", call.Name, toolErr.Error())
 			} else {
-				a.debugf(
-					"[tool.result] name=%s result=%s latency=%s\n",
-					call.Name,
-					toolResult,
-					latency,
-				)
+				a.debugf("[tool.result] name=%s result=%s latency=%s\n", call.Name, toolResult, latency)
 			}
 
 			result.ToolCalls = append(
@@ -263,21 +194,16 @@ func (a *Agent) Run(
 				return result, toolErr
 			}
 
-			messages = append(
-				messages,
-				llm.Message{
-					Role: llm.RoleTool,
-
-					ToolCallID: call.ID,
-
-					Content: content,
-				},
+			messages = append(messages, llm.Message{
+				Role:       llm.RoleTool,
+				ToolCallID: call.ID,
+				Content:    content,
+			},
 			)
 		}
 	}
 
 	result.FinalReason = "max_turns_exceeded"
-
 	result.Latency = time.Since(started)
 
 	return result, ErrMaxTurnsExceeded
@@ -298,26 +224,17 @@ func (a *Agent) debugf(
 	)
 }
 
-func toolErrorJSON(
-	name string,
-	err error,
-) string {
+func toolErrorJSON(name string, err error) string {
 	payload := map[string]any{
-		"ok": false,
-
-		"tool": name,
-
+		"ok":    false,
+		"tool":  name,
 		"error": err.Error(),
 	}
 
 	b, marshalErr := json.Marshal(payload)
 
 	if marshalErr != nil {
-		return fmt.Sprintf(
-			`{"ok":false,"tool":%q,"error":%q}`,
-			name,
-			err.Error(),
-		)
+		return fmt.Sprintf(`{"ok":false,"tool":%q,"error":%q}`, name, err.Error())
 	}
 
 	return string(b)

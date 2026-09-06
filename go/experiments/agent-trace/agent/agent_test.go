@@ -135,15 +135,26 @@ func TestAgentToolLoop(t *testing.T) {
 		)
 	}
 
-	result, err := a.Run(
+	initialHistory := []llm.Message{{
+		Role:    llm.RoleSystem,
+		Content: "test system prompt",
+	}}
+	result, nextHistory, err := a.RunWithHistory(
 		context.Background(),
 		"A102 refunded?",
+		initialHistory,
 	)
 	if err != nil {
 		t.Fatalf(
-			"Run() error = %v",
+			"RunWithHistory() error = %v",
 			err,
 		)
+	}
+	if len(initialHistory) != 1 || initialHistory[0].Content != "test system prompt" {
+		t.Fatalf("input history was modified: %+v", initialHistory)
+	}
+	if len(nextHistory) != 5 || nextHistory[1].Content != "A102 refunded?" {
+		t.Fatalf("next history = %+v", nextHistory)
 	}
 
 	if result.Answer !=
@@ -231,7 +242,7 @@ func TestAgentStopsBeforeLLMWhenContextCanceled(t *testing.T) {
 		t.Fatalf("New() error = %v", err)
 	}
 
-	result, runErr := a.Run(ctx, "cancelled request")
+	result, _, runErr := a.RunWithHistory(ctx, "cancelled request", nil)
 	if !errors.Is(runErr, context.Canceled) {
 		t.Fatalf("Run() error = %v, want context.Canceled", runErr)
 	}
@@ -264,7 +275,7 @@ func TestAgentStopsWhenContextCanceledAfterLLMResponse(t *testing.T) {
 		t.Fatalf("New() error = %v", err)
 	}
 
-	result, runErr := a.Run(ctx, "cancel after response")
+	result, _, runErr := a.RunWithHistory(ctx, "cancel after response", nil)
 	if !errors.Is(runErr, context.Canceled) {
 		t.Fatalf("Run() error = %v, want context.Canceled", runErr)
 	}
@@ -309,7 +320,7 @@ func TestAgentStopsAfterToolContextCancellation(t *testing.T) {
 		t.Fatalf("New() error = %v", err)
 	}
 
-	result, runErr := a.Run(ctx, "cancel during tool")
+	result, _, runErr := a.RunWithHistory(ctx, "cancel during tool", nil)
 	if !errors.Is(runErr, context.Canceled) {
 		t.Fatalf("Run() error = %v, want context.Canceled", runErr)
 	}
