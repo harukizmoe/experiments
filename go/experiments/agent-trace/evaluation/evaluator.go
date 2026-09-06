@@ -575,13 +575,10 @@ func toolArgumentAccuracy(expected []ToolExpectation, actual []agent.ToolCallRec
 }
 
 func toolPrecisionRecall(expected Expected, actual []agent.ToolCallRecord) (precision, recall float64, unnecessary int) {
-	requiredQuota := toolCountsFromExpectations(expected.RequiredTools)
-	allowedQuota := map[string]int{}
-	for name, count := range requiredQuota {
-		allowedQuota[name] = count
-	}
-	for _, name := range expected.OptionalTools {
-		allowedQuota[name]++
+	requiredQuota, optionalQuota := conversationToolQuotas(expected)
+	allowedQuota := cloneCounts(requiredQuota)
+	for name, count := range optionalQuota {
+		allowedQuota[name] += count
 	}
 
 	relevant := 0
@@ -596,7 +593,7 @@ func toolPrecisionRecall(expected Expected, actual []agent.ToolCallRecord) (prec
 	}
 
 	if len(actual) == 0 {
-		if len(expected.RequiredTools) == 0 {
+		if len(requiredQuota) == 0 {
 			precision = 1
 		} else {
 			precision = 0
@@ -618,6 +615,33 @@ func toolPrecisionRecall(expected Expected, actual []agent.ToolCallRecord) (prec
 		recall = float64(requiredMatched) / float64(requiredTotal)
 	}
 	return precision, recall, unnecessary
+}
+
+// conversationToolQuotas 使用逐轮工具契约统计多轮对话的聚合配额。
+// 这样，前一轮的失败查询仍是该轮的必要调用，不会被效率指标误报为无关调用。
+func conversationToolQuotas(expected Expected) (required, optional map[string]int) {
+	required = map[string]int{}
+	optional = map[string]int{}
+	if len(expected.TurnExpectations) == 0 {
+		required = toolCountsFromExpectations(expected.RequiredTools)
+		for _, name := range expected.OptionalTools {
+			optional[name]++
+		}
+		return required, optional
+	}
+
+	for _, turn := range expected.TurnExpectations {
+		for name, count := range toolCountsFromExpectations(turn.RequiredTools) {
+			required[name] += count
+		}
+		for _, name := range turn.OptionalTools {
+			optional[name]++
+		}
+	}
+	for _, name := range expected.OptionalTools {
+		optional[name]++
+	}
+	return required, optional
 }
 
 func argumentsMatch(toolName string, expected map[string]any, raw json.RawMessage) bool {

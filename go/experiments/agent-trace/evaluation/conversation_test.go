@@ -135,3 +135,80 @@ func TestRunnerUsesOneRunnerForAllConversationTurns(t *testing.T) {
 		t.Fatalf("aggregate result = %+v", results[0].AgentResult)
 	}
 }
+
+func TestCorrectionConversationUsesTurnContracts(t *testing.T) {
+	dataset, err := LoadDataset("../evaldata/cases.jsonl")
+	if err != nil {
+		t.Fatalf("LoadDataset() error = %v", err)
+	}
+
+	var item Case
+	for _, candidate := range dataset.Cases {
+		if candidate.ID == "after-sales-004" {
+			item = candidate
+			break
+		}
+	}
+	if item.ID == "" {
+		t.Fatal("after-sales-004 case not found")
+	}
+	if len(item.FollowUps) != 1 || len(item.Expected.TurnExpectations) != 2 {
+		t.Fatalf("correction case turns = follow_ups=%d turn_expectations=%d", len(item.FollowUps), len(item.Expected.TurnExpectations))
+	}
+
+	first := &agent.RunResult{
+		Input:  item.Input,
+		Answer: "未找到订单 A999。请提供正确的订单号。",
+		Turns:  2,
+		ToolCalls: []agent.ToolCallRecord{{
+			Name:      "get_order_details",
+			Arguments: json.RawMessage(`{"order_id":"A999"}`),
+			Result:    `{"found":false,"order_id":"A999"}`,
+		}},
+	}
+	second := &agent.RunResult{
+		Input:  item.FollowUps[0],
+		Answer: "订单 A100 符合退货条件，预计退款 129 元，尚未执行退款。",
+		Turns:  4,
+		ToolCalls: []agent.ToolCallRecord{
+			{
+				Name:      "get_order_details",
+				Arguments: json.RawMessage(`{"order_id":"A100"}`),
+				Result:    `{"days_since_purchase":5,"found":true,"order_id":"A100","product_id":"P100","quantity":1,"status":"shipped"}`,
+			},
+			{
+				Name:      "get_product",
+				Arguments: json.RawMessage(`{"product_id":"P100"}`),
+				Result:    `{"found":true,"price":129,"product_id":"P100"}`,
+			},
+			{
+				Name:   "get_return_policy",
+				Result: `{"eligible_statuses":["shipped","delivered"],"refund_policy":"full_original_price","return_window_days":30}`,
+			},
+			{
+				Name:      "calculator",
+				Arguments: json.RawMessage(`{"expression":"129 * 1"}`),
+				Result:    `{"expression":"129 * 1","result":129}`,
+			},
+		},
+	}
+
+	got := EvaluateConversation(item, []*agent.RunResult{first, second}, nil)
+	if !got.Passed {
+		t.Fatalf("correction conversation should pass: %+v", got)
+	}
+	if len(got.TurnEvaluations) != 2 || !got.TurnEvaluations[0].Passed || !got.TurnEvaluations[1].Passed {
+		t.Fatalf("turn evaluations = %+v", got.TurnEvaluations)
+	}
+	if metricValue(got.Metrics, "tool_precision") != 1 || metricValue(got.Metrics, "unnecessary_tool_calls") != 0 {
+		t.Fatalf("correction tool metrics = %+v", got.Metrics)
+	}
+
+	wrongSecond := *second
+	wrongSecond.ToolCalls = append([]agent.ToolCallRecord(nil), second.ToolCalls...)
+	wrongSecond.ToolCalls[0].Arguments = json.RawMessage(`{"order_id":"A999"}`)
+	got = EvaluateConversation(item, []*agent.RunResult{first, &wrongSecond}, nil)
+	if got.Passed {
+		t.Fatal("conversation should fail when the corrected order is not queried")
+	}
+}

@@ -18,9 +18,9 @@ func TestPhase3Dataset(t *testing.T) {
 	want := map[string]int{
 		"no_tool":             1,
 		"single_tool":         1,
-		"after_sales":         3,
+		"after_sales":         4,
 		"argument_extraction": 5,
-		"multi_tool":          5,
+		"multi_tool":          4,
 		"edge_adversarial":    5,
 	}
 	for category, n := range want {
