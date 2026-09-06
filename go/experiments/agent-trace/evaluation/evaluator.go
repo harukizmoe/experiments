@@ -40,19 +40,23 @@ func Evaluate(item Case, result *agent.RunResult, runErr error) Evaluation {
 
 	answerOK := answerMatches(item.Expected.AnswerRules, result.Answer)
 	selectionOK, selectionComment := toolSelection(item.Expected, result.ToolCalls)
+	orderOK, orderComment := toolOrder(item.Expected.ToolOrder, result.ToolCalls)
+	businessOK, businessComment := businessOutcomeCorrect(item.Expected, result.ToolCalls)
 	argumentAccuracy, argumentComment := toolArgumentAccuracy(item.Expected.RequiredTools, result.ToolCalls)
 	precision, recall, unnecessary := toolPrecisionRecall(item.Expected, result.ToolCalls)
 
 	turnsOK := item.Expected.MaxTurns == 0 || result.Turns <= item.Expected.MaxTurns
 	toolCountOK := item.Expected.MaxToolCalls == 0 || len(result.ToolCalls) <= item.Expected.MaxToolCalls
 
-	// Keep efficiency metrics separate so task_success does not hide why a run passed.
-	taskOK := runErr == nil && answerOK && selectionOK && argumentAccuracy == 1 && turnsOK && toolCountOK
+	// 业务结果和工具顺序属于任务正确性；效率指标仍单独保留，便于定位退化原因。
+	taskOK := runErr == nil && answerOK && selectionOK && orderOK && businessOK && argumentAccuracy == 1 && turnsOK && toolCountOK
 
 	metrics := []Metric{
-		booleanMetric("task_success", taskOK, taskComment(taskOK, runErr, answerOK, selectionOK, argumentAccuracy, turnsOK, toolCountOK)),
+		booleanMetric("task_success", taskOK, taskComment(taskOK, runErr, answerOK, selectionOK, orderOK, businessOK, argumentAccuracy, turnsOK, toolCountOK)),
 		booleanMetric("answer_correctness", answerOK, answerComment(answerOK, item.Expected.AnswerRules, result.Answer)),
 		booleanMetric("tool_selection_accuracy", selectionOK, selectionComment),
+		booleanMetric("tool_order_accuracy", orderOK, orderComment),
+		booleanMetric("business_outcome_correctness", businessOK, businessComment),
 		{
 			Name:     "tool_argument_accuracy",
 			Value:    argumentAccuracy,
@@ -161,6 +165,265 @@ func toolSelection(expected Expected, actual []agent.ToolCallRecord) (bool, stri
 		return false, fmt.Sprintf("tool call count %d exceeds max %d", len(actual), expected.MaxToolCalls)
 	}
 	return true, "required tools present and no forbidden/unapproved tool was used"
+}
+
+// toolOrder 检查有依赖关系的工具是否按规定顺序出现。
+func toolOrder(expected []string, actual []agent.ToolCallRecord) (bool, string) {
+	if len(expected) == 0 {
+		return true, "no tool order configured"
+	}
+
+	position := 0
+	for _, call := range actual {
+		if call.Name != expected[position] {
+			continue
+		}
+		position++
+		if position == len(expected) {
+			return true, "configured tool order was observed"
+		}
+	}
+
+	actualNames := make([]string, 0, len(actual))
+	for _, call := range actual {
+		actualNames = append(actualNames, call.Name)
+	}
+	return false, fmt.Sprintf(
+		"tool order mismatch: expected %s, got %s",
+		strings.Join(expected, " -> "),
+		strings.Join(actualNames, " -> "),
+	)
+}
+
+type observedOrderDetails struct {
+	Found             bool   `json:"found"`
+	OrderID           string `json:"order_id"`
+	Status            string `json:"status"`
+	ProductID         string `json:"product_id"`
+	Quantity          int    `json:"quantity"`
+	DaysSincePurchase int    `json:"days_since_purchase"`
+}
+
+type observedProduct struct {
+	Found     bool    `json:"found"`
+	ProductID string  `json:"product_id"`
+	Price     float64 `json:"price"`
+}
+
+type observedReturnPolicy struct {
+	ReturnWindowDays int      `json:"return_window_days"`
+	EligibleStatuses []string `json:"eligible_statuses"`
+	RefundPolicy     string   `json:"refund_policy"`
+}
+
+type observedCalculation struct {
+	Result float64 `json:"result"`
+}
+
+// businessOutcomeCorrect 根据与期望参数绑定的只读工具结果推导业务判断。
+func businessOutcomeCorrect(expected Expected, calls []agent.ToolCallRecord) (bool, string) {
+	outcome := expected.ExpectedBusinessOutcome
+	if outcome == nil {
+		return true, "no expected business outcome configured"
+	}
+
+	orderArguments, ok := expectedToolArguments(expected.RequiredTools, "get_order_details")
+	if !ok {
+		return false, "business outcome requires get_order_details arguments"
+	}
+	expectedOrderID, ok := expectedStringArgument(orderArguments, "order_id")
+	if !ok {
+		return false, "get_order_details expectation must include order_id"
+	}
+
+	var order observedOrderDetails
+	if err := decodeToolResult("get_order_details", orderArguments, calls, &order); err != nil {
+		return false, err.Error()
+	}
+	if !order.Found {
+		return false, "get_order_details reported that the order was not found"
+	}
+	if !strings.EqualFold(expectedOrderID, strings.TrimSpace(order.OrderID)) {
+		return false, fmt.Sprintf("get_order_details returned order_id %q, want %q", order.OrderID, expectedOrderID)
+	}
+	if strings.TrimSpace(order.ProductID) == "" {
+		return false, "get_order_details returned an empty product_id"
+	}
+
+	productArguments, ok := expectedToolArguments(expected.RequiredTools, "get_product")
+	if !ok {
+		return false, "business outcome requires get_product arguments"
+	}
+	expectedProductID, ok := expectedStringArgument(productArguments, "product_id")
+	if !ok {
+		return false, "get_product expectation must include product_id"
+	}
+	if !strings.EqualFold(expectedProductID, strings.TrimSpace(order.ProductID)) {
+		return false, fmt.Sprintf("expected product_id %q does not match order product_id %q", expectedProductID, order.ProductID)
+	}
+
+	policyArguments, ok := expectedToolArguments(expected.RequiredTools, "get_return_policy")
+	if !ok {
+		return false, "business outcome requires get_return_policy"
+	}
+	var policy observedReturnPolicy
+	if err := decodeToolResult("get_return_policy", policyArguments, calls, &policy); err != nil {
+		return false, err.Error()
+	}
+	if policy.ReturnWindowDays < 0 || len(policy.EligibleStatuses) == 0 {
+		return false, "get_return_policy returned an invalid policy"
+	}
+
+	statusAllowed := statusInList(policy.EligibleStatuses, order.Status)
+	withinWindow := order.DaysSincePurchase >= 0 && order.DaysSincePurchase <= policy.ReturnWindowDays
+	actualEligible := statusAllowed && withinWindow
+	actualReasons := make([]string, 0, 2)
+	if statusAllowed {
+		actualReasons = append(actualReasons, "status_allowed")
+	} else {
+		actualReasons = append(actualReasons, "status_not_allowed")
+	}
+	if withinWindow {
+		actualReasons = append(actualReasons, "within_return_window")
+	} else {
+		actualReasons = append(actualReasons, "outside_return_window")
+	}
+
+	if !actualEligible {
+		for _, call := range calls {
+			if call.Name == "calculator" {
+				return false, "calculator must not be called for an ineligible order"
+			}
+		}
+	}
+
+	var product observedProduct
+	if err := decodeToolResult("get_product", productArguments, calls, &product); err != nil {
+		return false, err.Error()
+	}
+	if !product.Found || product.Price < 0 {
+		return false, "get_product returned invalid product facts"
+	}
+	if !strings.EqualFold(strings.TrimSpace(product.ProductID), strings.TrimSpace(order.ProductID)) {
+		return false, fmt.Sprintf("get_product returned product_id %q, want order product_id %q", product.ProductID, order.ProductID)
+	}
+
+	actualRefund := 0.0
+	if actualEligible {
+		if order.Quantity <= 0 {
+			return false, "get_order_details returned a non-positive quantity"
+		}
+		if policy.RefundPolicy != "full_original_price" {
+			return false, fmt.Sprintf("unsupported refund policy %q", policy.RefundPolicy)
+		}
+
+		calculatorArguments, ok := expectedToolArguments(expected.RequiredTools, "calculator")
+		if !ok {
+			return false, "eligible business outcome requires calculator arguments"
+		}
+		if _, ok := expectedStringArgument(calculatorArguments, "expression"); !ok {
+			return false, "calculator expectation must include expression"
+		}
+		var calculation observedCalculation
+		if err := decodeToolResult("calculator", calculatorArguments, calls, &calculation); err != nil {
+			return false, err.Error()
+		}
+		actualRefund = calculation.Result
+		calculatedRefund := product.Price * float64(order.Quantity)
+		if !closeEnough(actualRefund, calculatedRefund) {
+			return false, fmt.Sprintf("calculator result %.2f does not equal original-price refund %.2f", actualRefund, calculatedRefund)
+		}
+	}
+
+	if outcome.Eligible != actualEligible {
+		return false, fmt.Sprintf("eligible=%t, want %t", actualEligible, outcome.Eligible)
+	}
+	if !closeEnough(outcome.RefundAmount, actualRefund) {
+		return false, fmt.Sprintf("refund_amount=%.2f, want %.2f", actualRefund, outcome.RefundAmount)
+	}
+	if len(outcome.ReasonCodes) > 0 && !sameStrings(outcome.ReasonCodes, actualReasons) {
+		return false, fmt.Sprintf("reason_codes=%v, want %v", actualReasons, outcome.ReasonCodes)
+	}
+	return true, fmt.Sprintf("eligible=%t refund_amount=%.2f reason_codes=%v", actualEligible, actualRefund, actualReasons)
+}
+
+// decodeToolResult 解码与期望参数匹配的唯一工具结果；重复匹配直接拒绝。
+func decodeToolResult(name string, expectedArguments map[string]any, calls []agent.ToolCallRecord, target any) error {
+	matches := 0
+	for _, call := range calls {
+		if call.Name != name {
+			continue
+		}
+		if len(expectedArguments) > 0 && !argumentsMatch(name, expectedArguments, call.Arguments) {
+			continue
+		}
+
+		matches++
+		if matches > 1 {
+			return fmt.Errorf("%s has multiple results matching expected arguments", name)
+		}
+		if call.Error != "" {
+			return fmt.Errorf("%s failed: %s", name, call.Error)
+		}
+		if strings.TrimSpace(call.Result) == "" {
+			return fmt.Errorf("%s returned an empty result", name)
+		}
+		if err := json.Unmarshal([]byte(call.Result), target); err != nil {
+			return fmt.Errorf("decode %s result: %w", name, err)
+		}
+	}
+	if matches == 0 {
+		return fmt.Errorf("%s result matching expected arguments was not found", name)
+	}
+	return nil
+}
+
+func expectedToolArguments(expected []ToolExpectation, name string) (map[string]any, bool) {
+	for _, item := range expected {
+		if item.Name == name {
+			return item.Arguments, true
+		}
+	}
+	return nil, false
+}
+
+func expectedStringArgument(arguments map[string]any, name string) (string, bool) {
+	value, ok := arguments[name].(string)
+	if !ok {
+		return "", false
+	}
+	value = strings.TrimSpace(value)
+	return value, value != ""
+}
+
+func statusInList(statuses []string, status string) bool {
+	for _, candidate := range statuses {
+		if strings.EqualFold(strings.TrimSpace(candidate), strings.TrimSpace(status)) {
+			return true
+		}
+	}
+	return false
+}
+
+func sameStrings(left, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	leftSet := stringSet(left)
+	rightSet := stringSet(right)
+	if len(leftSet) != len(rightSet) {
+		return false
+	}
+	for value := range leftSet {
+		if !rightSet[value] {
+			return false
+		}
+	}
+	return true
+}
+
+func closeEnough(left, right float64) bool {
+	return math.Abs(left-right) < 1e-9
 }
 
 func toolArgumentAccuracy(expected []ToolExpectation, actual []agent.ToolCallRecord) (float64, string) {
@@ -350,9 +613,9 @@ func answerComment(ok bool, rules []AnswerRule, answer string) string {
 	return fmt.Sprintf("answer did not satisfy all rules; answer=%q", truncate(answer, 180))
 }
 
-func taskComment(ok bool, runErr error, answerOK, selectionOK bool, argumentAccuracy float64, turnsOK, toolCountOK bool) string {
+func taskComment(ok bool, runErr error, answerOK, selectionOK, orderOK, businessOK bool, argumentAccuracy float64, turnsOK, toolCountOK bool) string {
 	if ok {
-		return "answer, tool policy, arguments, and configured limits all passed"
+		return "answer, tool policy, order, business outcome, arguments, and configured limits all passed"
 	}
 	parts := []string{}
 	if runErr != nil {
@@ -363,6 +626,12 @@ func taskComment(ok bool, runErr error, answerOK, selectionOK bool, argumentAccu
 	}
 	if !selectionOK {
 		parts = append(parts, "tool_selection_failed")
+	}
+	if !orderOK {
+		parts = append(parts, "tool_order_failed")
+	}
+	if !businessOK {
+		parts = append(parts, "business_outcome_failed")
 	}
 	if argumentAccuracy < 1 {
 		parts = append(parts, "tool_arguments_failed")

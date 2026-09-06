@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -18,17 +19,23 @@ import (
 )
 
 func main() {
+	if err := run(); err != nil {
+		fatalf("%v", err)
+	}
+}
+
+func run() (runErr error) {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	cfg, err := config.Load()
 	if err != nil {
-		fatalf("load config: %v", err)
+		return fmt.Errorf("load config: %w", err)
 	}
 
 	dataset, err := evalpkg.LoadDataset(cfg.Eval.DatasetPath)
 	if err != nil {
-		fatalf("load eval dataset: %v", err)
+		return fmt.Errorf("load eval dataset: %w", err)
 	}
 
 	client, err := llm.NewOpenAICompatibleClient(llm.OpenAICompatibleConfig{
@@ -38,13 +45,15 @@ func main() {
 		Timeout: cfg.LLM.Timeout,
 	})
 	if err != nil {
-		fatalf("create LLM client: %v", err)
+		return fmt.Errorf("create LLM client: %w", err)
 	}
 
 	toolList := []tools.Tool{
 		tools.CalculatorTool{},
 		tools.OrderTool{},
 		tools.ProductTool{},
+		tools.OrderDetailsTool{},
+		tools.ReturnPolicyTool{},
 	}
 
 	var provider *observability.Provider
@@ -59,8 +68,21 @@ func main() {
 			ExportTimeout:      cfg.Observability.ExportTimeout,
 		})
 		if err != nil {
-			fatalf("create observability provider: %v", err)
+			return fmt.Errorf("create observability provider: %w", err)
 		}
+
+		// Provider 创建成功后立即注册清理，覆盖后续初始化和 Dataset 同步失败路径。
+		defer func() {
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.Observability.ExportTimeout)
+			defer cancel()
+
+			if shutdownErr := provider.Shutdown(shutdownCtx); shutdownErr != nil {
+				runErr = errors.Join(
+					runErr,
+					fmt.Errorf("shutdown observability: %w", shutdownErr),
+				)
+			}
+		}()
 	}
 
 	var llmClient llm.Client = client
@@ -73,7 +95,7 @@ func main() {
 
 	registry, err := tools.NewRegistry(toolList...)
 	if err != nil {
-		fatalf("create tool registry: %v", err)
+		return fmt.Errorf("create tool registry: %w", err)
 	}
 
 	baseAgent, err := agent.New(llmClient, registry, agent.Config{
@@ -85,7 +107,7 @@ func main() {
 		DebugWriter:  os.Stderr,
 	})
 	if err != nil {
-		fatalf("create agent: %v", err)
+		return fmt.Errorf("create agent: %w", err)
 	}
 
 	var scoreSink evalpkg.ScoreSink
@@ -97,10 +119,11 @@ func main() {
 			cfg.Observability.ExportTimeout,
 		)
 		if err != nil {
-			fatalf("create Langfuse score client: %v", err)
+			return fmt.Errorf("create Langfuse score client: %w", err)
 		}
 		scoreSink = scoreClient
 	}
+
 	var datasetSynced bool
 	if cfg.Eval.UploadDataset && provider != nil {
 		datasetClient, err := langfuse.NewDatasetClient(
@@ -110,7 +133,7 @@ func main() {
 			cfg.Observability.ExportTimeout,
 		)
 		if err != nil {
-			fatalf("create Langfuse dataset client: %v", err)
+			return fmt.Errorf("create Langfuse dataset client: %w", err)
 		}
 
 		items := make([]langfuse.DatasetItem, 0, len(dataset.Cases))
@@ -146,19 +169,9 @@ func main() {
 			items,
 		)
 		if err != nil {
-			fatalf("sync Langfuse dataset: %v", err)
+			return fmt.Errorf("sync Langfuse dataset: %w", err)
 		}
 		datasetSynced = true
-	}
-
-	if provider != nil {
-		defer func() {
-			shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.Observability.ExportTimeout)
-			defer cancel()
-			if err := provider.Shutdown(shutdownCtx); err != nil {
-				fmt.Fprintf(os.Stderr, "shutdown observability: %v\n", err)
-			}
-		}()
 	}
 
 	fmt.Println("Go Agent Eval - Phase 3")
@@ -201,23 +214,25 @@ func main() {
 
 	results, err := runner.Run(ctx, dataset)
 	if err != nil {
-		fatalf("run evaluation: %v", err)
+		return fmt.Errorf("run evaluation: %w", err)
 	}
 
 	if provider != nil {
 		flushCtx, cancel := context.WithTimeout(context.Background(), cfg.Observability.ExportTimeout)
-		if err := provider.ForceFlush(flushCtx); err != nil {
-			fmt.Fprintf(os.Stderr, "flush observability: %v\n", err)
-		}
+		flushErr := provider.ForceFlush(flushCtx)
 		cancel()
+		if flushErr != nil {
+			return fmt.Errorf("flush observability: %w", flushErr)
+		}
 	}
 
 	report := evalpkg.BuildReport(cfg.Eval.RunName, cfg.Eval.DatasetPath, cfg.LLM.Model, startedAt, results)
 	if err := evalpkg.SaveReport(cfg.Eval.ReportPath, report); err != nil {
-		fatalf("save eval report: %v", err)
+		return fmt.Errorf("save eval report: %w", err)
 	}
 
 	printSummary(report, cfg.Eval.ReportPath)
+	return nil
 }
 
 func printSummary(report evalpkg.Report, reportPath string) {

@@ -21,14 +21,23 @@ type Case struct {
 	Metadata Metadata `json:"metadata"`
 }
 
-// Expected contains answer, tool-trajectory, and resource-limit expectations.
+// Expected 记录回答、工具轨迹、业务结果和资源限制等可观察评估契约。
 type Expected struct {
-	AnswerRules    []AnswerRule      `json:"answer_rules,omitempty"`
-	RequiredTools  []ToolExpectation `json:"required_tools,omitempty"`
-	OptionalTools  []string          `json:"optional_tools,omitempty"`
-	ForbiddenTools []string          `json:"forbidden_tools,omitempty"`
-	MaxToolCalls   int               `json:"max_tool_calls,omitempty"`
-	MaxTurns       int               `json:"max_turns,omitempty"`
+	AnswerRules             []AnswerRule      `json:"answer_rules,omitempty"`
+	RequiredTools           []ToolExpectation `json:"required_tools,omitempty"`
+	OptionalTools           []string          `json:"optional_tools,omitempty"`
+	ForbiddenTools          []string          `json:"forbidden_tools,omitempty"`
+	ToolOrder               []string          `json:"tool_order,omitempty"`
+	ExpectedBusinessOutcome *BusinessOutcome  `json:"expected_business_outcome,omitempty"`
+	MaxToolCalls            int               `json:"max_tool_calls,omitempty"`
+	MaxTurns                int               `json:"max_turns,omitempty"`
+}
+
+// BusinessOutcome 表示售后判断期望得到的结构化结果。
+type BusinessOutcome struct {
+	Eligible     bool     `json:"eligible"`
+	RefundAmount float64  `json:"refund_amount"`
+	ReasonCodes  []string `json:"reason_codes,omitempty"`
 }
 
 // AnswerRule requires at least one alternative to appear in the final answer.
@@ -121,6 +130,21 @@ func validateCase(item Case) error {
 	for i, name := range item.Expected.ForbiddenTools {
 		if strings.TrimSpace(name) == "" {
 			return fmt.Errorf("case %s forbidden_tools[%d] must not be empty", item.ID, i)
+		}
+	}
+	for i, name := range item.Expected.ToolOrder {
+		if strings.TrimSpace(name) == "" {
+			return fmt.Errorf("case %s tool_order[%d] must not be empty", item.ID, i)
+		}
+	}
+	if outcome := item.Expected.ExpectedBusinessOutcome; outcome != nil {
+		if outcome.RefundAmount < 0 {
+			return fmt.Errorf("case %s expected_business_outcome.refund_amount must not be negative", item.ID)
+		}
+		for i, code := range outcome.ReasonCodes {
+			if strings.TrimSpace(code) == "" {
+				return fmt.Errorf("case %s expected_business_outcome.reason_codes[%d] must not be empty", item.ID, i)
+			}
 		}
 	}
 	return nil

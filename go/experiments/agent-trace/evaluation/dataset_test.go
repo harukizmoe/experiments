@@ -17,7 +17,8 @@ func TestPhase3Dataset(t *testing.T) {
 	}
 	want := map[string]int{
 		"no_tool":             1,
-		"single_tool":         4,
+		"single_tool":         1,
+		"after_sales":         3,
 		"argument_extraction": 5,
 		"multi_tool":          5,
 		"edge_adversarial":    5,
@@ -31,6 +32,14 @@ func TestPhase3Dataset(t *testing.T) {
 	for _, item := range dataset.Cases {
 		if (item.ID == "edge-001" || item.ID == "edge-005") && item.Metadata.EvaluationNote == "" {
 			t.Fatalf("case %s must document its tool-policy expectation", item.ID)
+		}
+		if item.Metadata.Category == "after_sales" {
+			if item.Expected.ExpectedBusinessOutcome == nil {
+				t.Fatalf("case %s must define expected business outcome", item.ID)
+			}
+			if len(item.Expected.ToolOrder) == 0 {
+				t.Fatalf("case %s must define tool order", item.ID)
+			}
 		}
 	}
 }

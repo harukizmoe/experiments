@@ -19,20 +19,22 @@ import (
 )
 
 func main() {
+	if err := run(); err != nil {
+		fatalf("%v", err)
+	}
+}
+
+func run() (returnErr error) {
 	ctx, stop := signal.NotifyContext(
 		context.Background(),
 		os.Interrupt,
 		syscall.SIGTERM,
 	)
-
 	defer stop()
 
 	cfg, err := config.Load()
 	if err != nil {
-		fatalf(
-			"load config: %v",
-			err,
-		)
+		return fmt.Errorf("load config: %w", err)
 	}
 
 	client, err := llm.NewOpenAICompatibleClient(
@@ -43,19 +45,19 @@ func main() {
 			Timeout: cfg.LLM.Timeout,
 		},
 	)
-
 	if err != nil {
-		fatalf("create LLM client: %v", err)
+		return fmt.Errorf("create LLM client: %w", err)
 	}
 
 	toolList := []tools.Tool{
 		tools.CalculatorTool{},
 		tools.OrderTool{},
 		tools.ProductTool{},
+		tools.OrderDetailsTool{},
+		tools.ReturnPolicyTool{},
 	}
 
 	var provider *observability.Provider
-
 	if cfg.Observability.Enabled {
 		provider, err = observability.NewProvider(
 			ctx,
@@ -69,10 +71,26 @@ func main() {
 				ExportTimeout:      cfg.Observability.ExportTimeout,
 			},
 		)
-
 		if err != nil {
-			fatalf("create observability provider: %v", err)
+			return fmt.Errorf("create observability provider: %w", err)
 		}
+
+		// Provider 创建成功后立即注册清理，覆盖后续初始化和交互运行失败路径。
+		defer func() {
+			shutdownCtx, cancel := context.WithTimeout(
+				context.Background(),
+				cfg.Observability.ExportTimeout,
+			)
+
+			defer cancel()
+
+			if shutdownErr := provider.Shutdown(shutdownCtx); shutdownErr != nil {
+				returnErr = errors.Join(
+					returnErr,
+					fmt.Errorf("shutdown observability: %w", shutdownErr),
+				)
+			}
+		}()
 	}
 
 	// Use interface variables so decorators can wrap
@@ -99,10 +117,9 @@ func main() {
 	registry, err := tools.NewRegistry(
 		toolList...,
 	)
-
 	if err != nil {
-		fatalf(
-			"create tool registry: %v",
+		return fmt.Errorf(
+			"create tool registry: %w",
 			err,
 		)
 	}
@@ -119,10 +136,9 @@ func main() {
 			DebugWriter:  os.Stderr,
 		},
 	)
-
 	if err != nil {
-		fatalf(
-			"create agent: %v",
+		return fmt.Errorf(
+			"create agent: %w",
 			err,
 		)
 	}
@@ -144,28 +160,6 @@ func main() {
 			},
 			cfg.Observability.CaptureContent,
 		)
-	}
-
-	if provider != nil {
-		defer func() {
-			shutdownCtx, cancel := context.WithTimeout(
-				context.Background(),
-				cfg.Observability.ExportTimeout,
-			)
-
-			defer cancel()
-
-			if err := provider.Shutdown(
-				shutdownCtx,
-			); err != nil {
-
-				fmt.Fprintf(
-					os.Stderr,
-					"shutdown observability: %v\n",
-					err,
-				)
-			}
-		}()
 	}
 
 	fmt.Println(
@@ -207,7 +201,6 @@ func main() {
 
 		if input == "/quit" ||
 			input == "/exit" {
-
 			break
 		}
 
@@ -247,7 +240,6 @@ func main() {
 					"agent stopped: %v\n",
 					runErr,
 				)
-
 			} else {
 				fmt.Fprintf(
 					os.Stderr,
@@ -288,11 +280,9 @@ func main() {
 	}
 
 	if err := scanner.Err(); err != nil {
-		fatalf(
-			"read stdin: %v",
-			err,
-		)
+		return fmt.Errorf("read stdin: %w", err)
 	}
+	return nil
 }
 
 func fatalf(format string, args ...any) {

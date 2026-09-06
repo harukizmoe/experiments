@@ -9,29 +9,52 @@ import (
 	llm "harukizmoe/go-exp/experiments/agent-trace/llm"
 )
 
+// OrderTool 查询订单当前状态。
 type OrderTool struct{}
 
 type order struct {
-	OrderID string `json:"order_id"`
-	Status  string `json:"status"`
+	OrderID           string `json:"order_id"`
+	Status            string `json:"status"`
+	ProductID         string `json:"product_id"`
+	Quantity          int    `json:"quantity"`
+	DaysSincePurchase int    `json:"days_since_purchase"`
 }
 
 var orderData = map[string]order{
 	"A100": {
-		OrderID: "A100",
-		Status:  "shipped",
+		OrderID:           "A100",
+		Status:            "shipped",
+		ProductID:         "P100",
+		Quantity:          1,
+		DaysSincePurchase: 5,
 	},
 	"A101": {
-		OrderID: "A101",
-		Status:  "pending",
+		OrderID:           "A101",
+		Status:            "pending",
+		ProductID:         "P200",
+		Quantity:          1,
+		DaysSincePurchase: 2,
 	},
 	"A102": {
-		OrderID: "A102",
-		Status:  "refunded",
+		OrderID:           "A102",
+		Status:            "refunded",
+		ProductID:         "P300",
+		Quantity:          1,
+		DaysSincePurchase: 10,
 	},
 	"A103": {
-		OrderID: "A103",
-		Status:  "cancelled",
+		OrderID:           "A103",
+		Status:            "cancelled",
+		ProductID:         "P100",
+		Quantity:          1,
+		DaysSincePurchase: 3,
+	},
+	"A104": {
+		OrderID:           "A104",
+		Status:            "shipped",
+		ProductID:         "P300",
+		Quantity:          2,
+		DaysSincePurchase: 45,
 	},
 }
 
@@ -65,7 +88,6 @@ func (OrderTool) Execute(
 	_ context.Context,
 	arguments json.RawMessage,
 ) (string, error) {
-
 	var args struct {
 		OrderID string `json:"order_id"`
 	}
@@ -74,7 +96,6 @@ func (OrderTool) Execute(
 		arguments,
 		&args,
 	); err != nil {
-
 		return "", fmt.Errorf(
 			"decode lookup_order arguments: %w",
 			err,
