@@ -4,3 +4,6 @@ experiments/agent-trace/.env
 
 # Agent 评估报告是本地生成的运行产物，可能包含模型捕获内容。
 experiments/agent-trace/eval-results/
+
+# 仓库内 worktree 目录
+.worktrees/
