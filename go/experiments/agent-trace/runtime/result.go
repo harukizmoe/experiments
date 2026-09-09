@@ -1,4 +1,4 @@
-package agent_trace_agent
+package agent_trace_runtime
 
 import (
 	"encoding/json"
@@ -7,6 +7,7 @@ import (
 	llm "harukizmoe/go-exp/experiments/agent-trace/llm"
 )
 
+// ToolCallRecord 描述 Runtime 在一次用户轮次中执行的单个工具调用及其结果。
 type ToolCallRecord struct {
 	Turn      int             `json:"turn"`
 	ID        string          `json:"id"`
@@ -17,6 +18,7 @@ type ToolCallRecord struct {
 	Latency   time.Duration   `json:"latency"`
 }
 
+// RunResult 是一次用户轮次的同步执行结果，包含回答、工具调用、用量和观测标识。
 type RunResult struct {
 	Input             string           `json:"input"`
 	Answer            string           `json:"answer"`

@@ -5,7 +5,7 @@ import (
 )
 
 // DefaultSystemPrompt 定义本实验售后咨询 Agent 的业务规则。
-// 它属于调用方注入的策略，不属于 Agent Loop 的执行机制。
+// 它属于调用方注入的策略，不属于 Runtime Loop 的执行机制。
 const DefaultSystemPrompt = `You are a concise and reliable assistant with access to tools.
 Use a relevant tool whenever the requested fact is provided by that tool instead of guessing.
 Do not invent tool results.

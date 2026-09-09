@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	agent "harukizmoe/go-exp/experiments/agent-trace/agent"
+	runtime "harukizmoe/go-exp/experiments/agent-trace/runtime"
 )
 
 func TestEvaluateChecksBusinessOutcomeAndToolOrder(t *testing.T) {
@@ -31,10 +31,10 @@ func TestEvaluateChecksBusinessOutcomeAndToolOrder(t *testing.T) {
 			},
 		},
 	}
-	result := &agent.RunResult{
+	result := &runtime.RunResult{
 		Answer: "订单 A100 符合退货条件，预计退款 129 元。",
 		Turns:  5,
-		ToolCalls: []agent.ToolCallRecord{
+		ToolCalls: []runtime.ToolCallRecord{
 			{Name: "get_order_details", Arguments: json.RawMessage(`{"order_id":"A100"}`), Result: `{"found":true,"order_id":"A100","status":"shipped","product_id":"P100","quantity":1,"days_since_purchase":5}`},
 			{Name: "get_product", Arguments: json.RawMessage(`{"product_id":"P100"}`), Result: `{"found":true,"product_id":"P100","name":"Basic Keyboard","price":129,"currency":"CNY","stock":10}`},
 			{Name: "get_return_policy", Arguments: json.RawMessage(`{}`), Result: `{"return_window_days":30,"eligible_statuses":["shipped","delivered"],"refund_policy":"full_original_price"}`},
@@ -71,7 +71,7 @@ func TestEvaluateRejectsIncorrectBusinessOutcome(t *testing.T) {
 			},
 		},
 	}
-	result := &agent.RunResult{ToolCalls: []agent.ToolCallRecord{
+	result := &runtime.RunResult{ToolCalls: []runtime.ToolCallRecord{
 		{Name: "get_order_details", Arguments: json.RawMessage(`{"order_id":"A100"}`), Result: `{"found":true,"order_id":"A100","status":"shipped","product_id":"P100","quantity":1,"days_since_purchase":5}`},
 		{Name: "get_product", Arguments: json.RawMessage(`{"product_id":"P100"}`), Result: `{"found":true,"product_id":"P100","price":129}`},
 		{Name: "get_return_policy", Arguments: json.RawMessage(`{}`), Result: `{"return_window_days":30,"eligible_statuses":["shipped","delivered"],"refund_policy":"full_original_price"}`},
@@ -103,18 +103,18 @@ func TestEvaluateRejectsUntrustedProductResults(t *testing.T) {
 			},
 		},
 	}
-	commonCalls := []agent.ToolCallRecord{
+	commonCalls := []runtime.ToolCallRecord{
 		{Name: "get_order_details", Arguments: json.RawMessage(`{"order_id":"A100"}`), Result: `{"found":true,"order_id":"A100","status":"shipped","product_id":"P100","quantity":1,"days_since_purchase":5}`},
 		{Name: "get_return_policy", Arguments: json.RawMessage(`{}`), Result: `{"return_window_days":30,"eligible_statuses":["shipped","delivered"],"refund_policy":"full_original_price"}`},
 		{Name: "calculator", Arguments: json.RawMessage(`{"expression":"129 * 1"}`), Result: `{"expression":"129 * 1","result":129}`},
 	}
 	tests := []struct {
 		name         string
-		productCalls []agent.ToolCallRecord
+		productCalls []runtime.ToolCallRecord
 	}{
 		{
 			name: "wrong call arguments",
-			productCalls: []agent.ToolCallRecord{{
+			productCalls: []runtime.ToolCallRecord{{
 				Name:      "get_product",
 				Arguments: json.RawMessage(`{"product_id":"P300"}`),
 				Result:    `{"found":true,"product_id":"P300","price":129}`,
@@ -122,7 +122,7 @@ func TestEvaluateRejectsUntrustedProductResults(t *testing.T) {
 		},
 		{
 			name: "wrong returned identity",
-			productCalls: []agent.ToolCallRecord{{
+			productCalls: []runtime.ToolCallRecord{{
 				Name:      "get_product",
 				Arguments: json.RawMessage(`{"product_id":"P100"}`),
 				Result:    `{"found":true,"product_id":"P300","price":129}`,
@@ -130,7 +130,7 @@ func TestEvaluateRejectsUntrustedProductResults(t *testing.T) {
 		},
 		{
 			name: "duplicate matching results",
-			productCalls: []agent.ToolCallRecord{
+			productCalls: []runtime.ToolCallRecord{
 				{
 					Name:      "get_product",
 					Arguments: json.RawMessage(`{"product_id":"P100"}`),
@@ -147,11 +147,11 @@ func TestEvaluateRejectsUntrustedProductResults(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			calls := append([]agent.ToolCallRecord{}, commonCalls[:1]...)
+			calls := append([]runtime.ToolCallRecord{}, commonCalls[:1]...)
 			calls = append(calls, test.productCalls...)
 			calls = append(calls, commonCalls[1:]...)
 
-			got := Evaluate(item, &agent.RunResult{ToolCalls: calls}, nil)
+			got := Evaluate(item, &runtime.RunResult{ToolCalls: calls}, nil)
 			if got.Passed {
 				t.Fatal("evaluation should reject an untrusted product result")
 			}
@@ -178,7 +178,7 @@ func TestEvaluateRejectsCalculatorForIneligibleOrder(t *testing.T) {
 			},
 		},
 	}
-	result := &agent.RunResult{ToolCalls: []agent.ToolCallRecord{
+	result := &runtime.RunResult{ToolCalls: []runtime.ToolCallRecord{
 		{Name: "get_order_details", Arguments: json.RawMessage(`{"order_id":"A104"}`), Result: `{"found":true,"order_id":"A104","status":"shipped","product_id":"P300","quantity":2,"days_since_purchase":45}`},
 		{Name: "get_product", Arguments: json.RawMessage(`{"product_id":"P300"}`), Result: `{"found":true,"product_id":"P300","price":79}`},
 		{Name: "get_return_policy", Arguments: json.RawMessage(`{}`), Result: `{"return_window_days":30,"eligible_statuses":["shipped","delivered"],"refund_policy":"full_original_price"}`},
@@ -203,7 +203,7 @@ func TestEvaluateRejectsWrongToolOrder(t *testing.T) {
 		},
 		ToolOrder: []string{"get_order_details", "get_product", "get_return_policy"},
 	}}
-	result := &agent.RunResult{ToolCalls: []agent.ToolCallRecord{
+	result := &runtime.RunResult{ToolCalls: []runtime.ToolCallRecord{
 		{Name: "get_product"},
 		{Name: "get_order_details"},
 		{Name: "get_return_policy"},

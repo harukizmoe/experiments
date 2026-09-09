@@ -5,15 +5,15 @@ import (
 	"encoding/json"
 	"testing"
 
-	agent "harukizmoe/go-exp/experiments/agent-trace/agent"
+	runtime "harukizmoe/go-exp/experiments/agent-trace/runtime"
 )
 
 type scriptedConversationRunner struct {
-	results []*agent.RunResult
+	results []*runtime.RunResult
 	inputs  []string
 }
 
-func (r *scriptedConversationRunner) Run(_ context.Context, input string) (*agent.RunResult, error) {
+func (r *scriptedConversationRunner) Run(_ context.Context, input string) (*runtime.RunResult, error) {
 	r.inputs = append(r.inputs, input)
 	result := r.results[len(r.inputs)-1]
 	return result, nil
@@ -55,22 +55,22 @@ func clarificationCase() Case {
 
 func TestEvaluateConversationChecksTurnSpecificContract(t *testing.T) {
 	item := clarificationCase()
-	first := &agent.RunResult{
+	first := &runtime.RunResult{
 		Input:  item.Input,
 		Answer: "请提供订单号。",
 		Turns:  1,
 	}
-	second := &agent.RunResult{
+	second := &runtime.RunResult{
 		Input:  item.FollowUps[0],
 		Answer: "订单 A100 的状态是 shipped。",
 		Turns:  2,
-		ToolCalls: []agent.ToolCallRecord{{
+		ToolCalls: []runtime.ToolCallRecord{{
 			Name:      "lookup_order",
 			Arguments: json.RawMessage(`{"order_id":"A100"}`),
 		}},
 	}
 
-	got := EvaluateConversation(item, []*agent.RunResult{first, second}, nil)
+	got := EvaluateConversation(item, []*runtime.RunResult{first, second}, nil)
 	if !got.Passed {
 		t.Fatalf("conversation should pass: %+v", got)
 	}
@@ -81,11 +81,11 @@ func TestEvaluateConversationChecksTurnSpecificContract(t *testing.T) {
 		t.Fatalf("conversation metric = %+v", got.Metrics)
 	}
 
-	first.ToolCalls = []agent.ToolCallRecord{{
+	first.ToolCalls = []runtime.ToolCallRecord{{
 		Name:      "lookup_order",
 		Arguments: json.RawMessage(`{"order_id":"A100"}`),
 	}}
-	got = EvaluateConversation(item, []*agent.RunResult{first, second}, nil)
+	got = EvaluateConversation(item, []*runtime.RunResult{first, second}, nil)
 	if got.Passed {
 		t.Fatal("conversation should fail when the clarification turn calls a tool")
 	}
@@ -97,7 +97,7 @@ func TestEvaluateConversationChecksTurnSpecificContract(t *testing.T) {
 func TestRunnerUsesOneRunnerForAllConversationTurns(t *testing.T) {
 	item := clarificationCase()
 	scripted := &scriptedConversationRunner{
-		results: []*agent.RunResult{
+		results: []*runtime.RunResult{
 			{
 				Input:  item.Input,
 				Answer: "请提供订单号。",
@@ -107,7 +107,7 @@ func TestRunnerUsesOneRunnerForAllConversationTurns(t *testing.T) {
 				Input:  item.FollowUps[0],
 				Answer: "订单 A100 的状态是 shipped。",
 				Turns:  2,
-				ToolCalls: []agent.ToolCallRecord{{
+				ToolCalls: []runtime.ToolCallRecord{{
 					Name:      "lookup_order",
 					Arguments: json.RawMessage(`{"order_id":"A100"}`),
 				}},
@@ -116,7 +116,7 @@ func TestRunnerUsesOneRunnerForAllConversationTurns(t *testing.T) {
 	}
 
 	results, err := (Runner{
-		AgentForCase: func(Case) (agent.Runner, error) { return scripted, nil },
+		RunnerForCase: func(Case) (runtime.Runner, error) { return scripted, nil },
 	}).Run(context.Background(), Dataset{Cases: []Case{item}})
 	if err != nil {
 		t.Fatalf("Runner.Run() error = %v", err)
@@ -156,21 +156,21 @@ func TestCorrectionConversationUsesTurnContracts(t *testing.T) {
 		t.Fatalf("correction case turns = follow_ups=%d turn_expectations=%d", len(item.FollowUps), len(item.Expected.TurnExpectations))
 	}
 
-	first := &agent.RunResult{
+	first := &runtime.RunResult{
 		Input:  item.Input,
 		Answer: "未找到订单 A999。请提供正确的订单号。",
 		Turns:  2,
-		ToolCalls: []agent.ToolCallRecord{{
+		ToolCalls: []runtime.ToolCallRecord{{
 			Name:      "get_order_details",
 			Arguments: json.RawMessage(`{"order_id":"A999"}`),
 			Result:    `{"found":false,"order_id":"A999"}`,
 		}},
 	}
-	second := &agent.RunResult{
+	second := &runtime.RunResult{
 		Input:  item.FollowUps[0],
 		Answer: "订单 A100 符合退货条件，预计退款 129 元，尚未执行退款。",
 		Turns:  4,
-		ToolCalls: []agent.ToolCallRecord{
+		ToolCalls: []runtime.ToolCallRecord{
 			{
 				Name:      "get_order_details",
 				Arguments: json.RawMessage(`{"order_id":"A100"}`),
@@ -193,7 +193,7 @@ func TestCorrectionConversationUsesTurnContracts(t *testing.T) {
 		},
 	}
 
-	got := EvaluateConversation(item, []*agent.RunResult{first, second}, nil)
+	got := EvaluateConversation(item, []*runtime.RunResult{first, second}, nil)
 	if !got.Passed {
 		t.Fatalf("correction conversation should pass: %+v", got)
 	}
@@ -205,9 +205,9 @@ func TestCorrectionConversationUsesTurnContracts(t *testing.T) {
 	}
 
 	wrongSecond := *second
-	wrongSecond.ToolCalls = append([]agent.ToolCallRecord(nil), second.ToolCalls...)
+	wrongSecond.ToolCalls = append([]runtime.ToolCallRecord(nil), second.ToolCalls...)
 	wrongSecond.ToolCalls[0].Arguments = json.RawMessage(`{"order_id":"A999"}`)
-	got = EvaluateConversation(item, []*agent.RunResult{first, &wrongSecond}, nil)
+	got = EvaluateConversation(item, []*runtime.RunResult{first, &wrongSecond}, nil)
 	if got.Passed {
 		t.Fatal("conversation should fail when the corrected order is not queried")
 	}

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"unicode"
 
-	agent "harukizmoe/go-exp/experiments/agent-trace/agent"
+	runtime "harukizmoe/go-exp/experiments/agent-trace/runtime"
 )
 
 const (
@@ -41,17 +41,17 @@ type TurnEvaluation struct {
 	Metrics []Metric `json:"metrics"`
 }
 
-// Evaluate 将单轮 Agent 结果与案例期望进行比较。
-func Evaluate(item Case, result *agent.RunResult, runErr error) Evaluation {
-	return EvaluateConversation(item, []*agent.RunResult{result}, runErr)
+// Evaluate 将单轮 Runtime 结果与案例期望进行比较。
+func Evaluate(item Case, result *runtime.RunResult, runErr error) Evaluation {
+	return EvaluateConversation(item, []*runtime.RunResult{result}, runErr)
 }
 
 // EvaluateConversation 同时检查最终聚合结果和每个已配置的用户轮次。
 // 聚合结果覆盖全部工具调用，TurnExpectations 则约束澄清和查询发生在哪一轮。
-func EvaluateConversation(item Case, turnResults []*agent.RunResult, runErr error) Evaluation {
+func EvaluateConversation(item Case, turnResults []*runtime.RunResult, runErr error) Evaluation {
 	result := aggregateRunResults(turnResults)
 	if result == nil {
-		result = &agent.RunResult{}
+		result = &runtime.RunResult{}
 	}
 
 	answerOK := answerMatches(item.Expected.AnswerRules, result.Answer)
@@ -121,7 +121,7 @@ func EvaluateConversation(item Case, turnResults []*agent.RunResult, runErr erro
 	}
 }
 
-func evaluateTurnExpectations(item Case, actual []*agent.RunResult) (bool, []TurnEvaluation, string) {
+func evaluateTurnExpectations(item Case, actual []*runtime.RunResult) (bool, []TurnEvaluation, string) {
 	expected := item.Expected.TurnExpectations
 	if len(expected) == 0 {
 		return true, nil, "no per-turn expectations configured"
@@ -135,7 +135,7 @@ func evaluateTurnExpectations(item Case, actual []*agent.RunResult) (bool, []Tur
 	allOK := true
 	comment := fmt.Sprintf("all %d configured conversation turns passed", len(expected))
 	for index, expectation := range expected {
-		result := &agent.RunResult{}
+		result := &runtime.RunResult{}
 		if index < len(actual) && actual[index] != nil {
 			result = actual[index]
 		}
@@ -250,7 +250,7 @@ func answerMatches(rules []AnswerRule, answer string) bool {
 	return true
 }
 
-func toolSelection(expected Expected, actual []agent.ToolCallRecord) (bool, string) {
+func toolSelection(expected Expected, actual []runtime.ToolCallRecord) (bool, string) {
 	required := toolCountsFromExpectations(expected.RequiredTools)
 	actualCounts := toolCounts(actual)
 
@@ -287,7 +287,7 @@ func toolSelection(expected Expected, actual []agent.ToolCallRecord) (bool, stri
 }
 
 // toolOrder 检查有依赖关系的工具是否按规定顺序出现。
-func toolOrder(expected []string, actual []agent.ToolCallRecord) (bool, string) {
+func toolOrder(expected []string, actual []runtime.ToolCallRecord) (bool, string) {
 	if len(expected) == 0 {
 		return true, "no tool order configured"
 	}
@@ -340,7 +340,7 @@ type observedCalculation struct {
 }
 
 // businessOutcomeCorrect 根据与期望参数绑定的只读工具结果推导业务判断。
-func businessOutcomeCorrect(expected Expected, calls []agent.ToolCallRecord) (bool, string) {
+func businessOutcomeCorrect(expected Expected, calls []runtime.ToolCallRecord) (bool, string) {
 	outcome := expected.ExpectedBusinessOutcome
 	if outcome == nil {
 		return true, "no expected business outcome configured"
@@ -467,7 +467,7 @@ func businessOutcomeCorrect(expected Expected, calls []agent.ToolCallRecord) (bo
 }
 
 // decodeToolResult 解码与期望参数匹配的唯一工具结果；重复匹配直接拒绝。
-func decodeToolResult(name string, expectedArguments map[string]any, calls []agent.ToolCallRecord, target any) error {
+func decodeToolResult(name string, expectedArguments map[string]any, calls []runtime.ToolCallRecord, target any) error {
 	matches := 0
 	for _, call := range calls {
 		if call.Name != name {
@@ -545,7 +545,7 @@ func closeEnough(left, right float64) bool {
 	return math.Abs(left-right) < 1e-9
 }
 
-func toolArgumentAccuracy(expected []ToolExpectation, actual []agent.ToolCallRecord) (float64, string) {
+func toolArgumentAccuracy(expected []ToolExpectation, actual []runtime.ToolCallRecord) (float64, string) {
 	var withArguments []ToolExpectation
 	for _, item := range expected {
 		if len(item.Arguments) > 0 {
@@ -574,7 +574,7 @@ func toolArgumentAccuracy(expected []ToolExpectation, actual []agent.ToolCallRec
 	return value, fmt.Sprintf("matched %d/%d required tool argument sets", matched, len(withArguments))
 }
 
-func toolPrecisionRecall(expected Expected, actual []agent.ToolCallRecord) (precision, recall float64, unnecessary int) {
+func toolPrecisionRecall(expected Expected, actual []runtime.ToolCallRecord) (precision, recall float64, unnecessary int) {
 	requiredQuota, optionalQuota := conversationToolQuotas(expected)
 	allowedQuota := cloneCounts(requiredQuota)
 	for name, count := range optionalQuota {
@@ -714,7 +714,7 @@ func removeWhitespace(s string) string {
 	}, s)
 }
 
-func toolCounts(calls []agent.ToolCallRecord) map[string]int {
+func toolCounts(calls []runtime.ToolCallRecord) map[string]int {
 	counts := map[string]int{}
 	for _, call := range calls {
 		counts[call.Name]++

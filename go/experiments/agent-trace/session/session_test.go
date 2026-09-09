@@ -6,12 +6,12 @@ import (
 	"reflect"
 	"testing"
 
-	agent "harukizmoe/go-exp/experiments/agent-trace/agent"
 	llm "harukizmoe/go-exp/experiments/agent-trace/llm"
+	runtime "harukizmoe/go-exp/experiments/agent-trace/runtime"
 )
 
 type scriptedTurn struct {
-	result *agent.RunResult
+	result *runtime.RunResult
 	next   []llm.Message
 	err    error
 }
@@ -28,7 +28,7 @@ func (e *scriptedExecutor) RunWithHistory(
 	_ context.Context,
 	input string,
 	history []llm.Message,
-) (*agent.RunResult, []llm.Message, error) {
+) (*runtime.RunResult, []llm.Message, error) {
 	e.calls = append(e.calls, struct {
 		input   string
 		history []llm.Message
@@ -60,20 +60,20 @@ func TestSessionPreservesHistoryAcrossUserTurns(t *testing.T) {
 	executor := &scriptedExecutor{
 		steps: []scriptedTurn{
 			{
-				result: &agent.RunResult{
+				result: &runtime.RunResult{
 					Input:  "我想退货",
 					Answer: "请提供订单号。",
 				},
 				next: firstHistory,
 			},
 			{
-				result: &agent.RunResult{
+				result: &runtime.RunResult{
 					Input: "订单号是 A100",
 				},
 				err: context.Canceled,
 			},
 			{
-				result: &agent.RunResult{
+				result: &runtime.RunResult{
 					Input:  "订单号是 A100",
 					Answer: "订单 A100 可以退货。",
 				},
@@ -125,5 +125,89 @@ func TestSessionPreservesHistoryAcrossUserTurns(t *testing.T) {
 func TestNewRejectsNilExecutor(t *testing.T) {
 	if _, err := New(nil, nil); err == nil {
 		t.Fatal("New() error = nil, want error")
+	}
+}
+
+func TestSessionOwnsNestedInitialHistory(t *testing.T) {
+	initial := []llm.Message{{
+		Role: llm.RoleAssistant,
+		ToolCalls: []llm.ToolCall{{
+			ID:        "call_1",
+			Name:      "lookup_order",
+			Arguments: []byte(`{"order_id":"A100"}`),
+		}},
+	}}
+	executor := &scriptedExecutor{
+		steps: []scriptedTurn{{
+			result: &runtime.RunResult{Input: "next"},
+			next:   []llm.Message{{Role: llm.RoleAssistant, Content: "done"}},
+		}},
+	}
+	session, err := New(executor, initial)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	initial[0].ToolCalls[0].Arguments[0] = 'X'
+	if _, err := session.Run(context.Background(), "next"); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+
+	got := string(executor.calls[0].history[0].ToolCalls[0].Arguments)
+	if got != `{"order_id":"A100"}` {
+		t.Fatalf("session history shares nested arguments: %q", got)
+	}
+}
+
+func TestSessionPromptAndReset(t *testing.T) {
+	initial := []llm.Message{{
+		Role:    llm.RoleSystem,
+		Content: "system",
+	}}
+	executor := &scriptedExecutor{
+		steps: []scriptedTurn{
+			{
+				result: &runtime.RunResult{
+					Input:  "first",
+					Answer: "first answer",
+				},
+				next: []llm.Message{
+					initial[0],
+					{Role: llm.RoleUser, Content: "first"},
+					{Role: llm.RoleAssistant, Content: "first answer"},
+				},
+			},
+			{
+				result: &runtime.RunResult{
+					Input:  "second",
+					Answer: "second answer",
+				},
+				next: []llm.Message{
+					initial[0],
+					{Role: llm.RoleUser, Content: "second"},
+					{Role: llm.RoleAssistant, Content: "second answer"},
+				},
+			},
+		},
+	}
+	session, err := New(executor, initial)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	answer, err := session.Prompt(context.Background(), "first")
+	if err != nil {
+		t.Fatalf("Prompt() error = %v", err)
+	}
+	if answer != "first answer" {
+		t.Fatalf("Prompt() = %q, want %q", answer, "first answer")
+	}
+
+	session.Reset()
+	if _, err := session.Run(context.Background(), "second"); err != nil {
+		t.Fatalf("Run() after Reset error = %v", err)
+	}
+	if !reflect.DeepEqual(executor.calls[1].history, initial) {
+		t.Fatalf("history after Reset = %+v, want %+v", executor.calls[1].history, initial)
 	}
 }

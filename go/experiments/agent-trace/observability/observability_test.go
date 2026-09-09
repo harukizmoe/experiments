@@ -5,9 +5,10 @@ import (
 	"encoding/json"
 	"testing"
 
-	agent "harukizmoe/go-exp/experiments/agent-trace/agent"
+	agentpkg "harukizmoe/go-exp/experiments/agent-trace/agent"
 	llm "harukizmoe/go-exp/experiments/agent-trace/llm"
 	policy "harukizmoe/go-exp/experiments/agent-trace/policy"
+	runtime "harukizmoe/go-exp/experiments/agent-trace/runtime"
 	sessionpkg "harukizmoe/go-exp/experiments/agent-trace/session"
 	tools "harukizmoe/go-exp/experiments/agent-trace/tools"
 
@@ -31,7 +32,7 @@ func (s *scriptedLLM) Generate(
 	return response, nil
 }
 
-func TestAgentLLMToolTraceHierarchy(
+func TestRunnerLLMToolTraceHierarchy(
 	t *testing.T,
 ) {
 	recorder := tracetest.NewSpanRecorder()
@@ -131,29 +132,33 @@ func TestAgentLLMToolTraceHierarchy(
 		)
 	}
 
-	baseAgent, err := agent.New(
+	engine, err := runtime.NewEngine(
 		wrappedLLM,
 		registry,
-		agent.Config{
+		runtime.Config{
 			MaxTurns: 4,
 		},
 	)
 	if err != nil {
 		t.Fatalf(
-			"agent.New() error = %v",
+			"runtime.NewEngine() error = %v",
 			err,
 		)
 	}
 
+	executor, err := agentpkg.New(engine)
+	if err != nil {
+		t.Fatalf("agent.New() error = %v", err)
+	}
 	conversation, err := sessionpkg.New(
-		baseAgent,
+		executor,
 		policy.InitialHistory(),
 	)
 	if err != nil {
 		t.Fatalf("session.New() error = %v", err)
 	}
 
-	runner := WrapAgent(
+	runner := WrapRunner(
 		conversation,
 		tracer,
 		TraceContext{

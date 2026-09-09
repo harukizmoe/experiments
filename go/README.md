@@ -12,7 +12,7 @@
 
 | 实验 | 内容 | 运行方式 |
 | --- | --- | --- |
-| [`agent-trace`](experiments/agent-trace) | 带计算器、订单和商品工具的多轮售后咨询 Agent；支持 OpenAI-compatible API、OpenTelemetry/Langfuse Trace，以及默认仅落地本地的确定性评测。 | `go run ./experiments/agent-trace/cmd/obs` |
+| [`agent-trace`](experiments/agent-trace) | 带计算器、订单和商品工具的多轮售后咨询 Agent；支持 OpenAI-compatible API、OpenTelemetry/Langfuse Trace，以及默认仅落地本地的确定性评测。 | `go run ./experiments/agent-trace/cmd/cli` |
 | [`json-custom-struct`](experiments/json-custom-struct) | 根据 `role` 判别 JSON 消息类型，并验证缺少或不支持的消息类型。 | `go test ./experiments/json-custom-struct` |
 | [`langfuse-otel`](experiments/langfuse-otel) | 使用固定输入演示 ReAct Agent 的 Span 层级、Generation/Tool/Retriever 观测类型和 W3C Trace Context 传播。 | `go run ./experiments/langfuse-otel` |
 
@@ -38,7 +38,7 @@ cp experiments/agent-trace/.example.env experiments/agent-trace/.env
 启动交互式 Agent：
 
 ```bash
-go run ./experiments/agent-trace/cmd/obs
+go run ./experiments/agent-trace/cmd/cli
 ```
 
 运行评测数据集：

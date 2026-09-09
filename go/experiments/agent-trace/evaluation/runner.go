@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"io"
 
-	agent "harukizmoe/go-exp/experiments/agent-trace/agent"
+	runtime "harukizmoe/go-exp/experiments/agent-trace/runtime"
 )
 
 // ScoreSink receives one metric for a completed case.
@@ -22,39 +22,38 @@ type ScoreSink interface {
 
 // Runner 按顺序执行 Dataset case，并可选地上传评估分数。
 type Runner struct {
-	AgentForCase func(Case) (agent.Runner, error)
-	ScoreSink    ScoreSink
-	Progress     io.Writer
+	RunnerForCase func(Case) (runtime.Runner, error)
+	ScoreSink     ScoreSink
+	Progress      io.Writer
 }
 
-// ConversationTurnResult 记录一条用户输入及该轮 Agent 结果。
+// ConversationTurnResult 记录一条用户输入及该轮 Runtime 结果。
 // CaseResult 的聚合结果用于评分；逐轮证据保留澄清和工具发生轮次，写入本地报告。
 type ConversationTurnResult struct {
-	Turn        int              `json:"turn"`
-	Input       string           `json:"input"`
-	AgentResult *agent.RunResult `json:"agent_result,omitempty"`
-	AgentError  string           `json:"agent_error,omitempty"`
+	Turn        int                `json:"turn"`
+	Input       string             `json:"input"`
+	AgentResult *runtime.RunResult `json:"agent_result,omitempty"`
+	AgentError  string             `json:"agent_error,omitempty"`
 }
 
-// CaseResult combines the aggregate Agent output, per-turn evidence,
-// evaluation metrics, and upload errors.
+// CaseResult 记录聚合 Runtime 输出、逐轮证据、评估指标和上传错误。
 type CaseResult struct {
 	CaseID            string                   `json:"case_id"`
 	Category          string                   `json:"category"`
 	Difficulty        string                   `json:"difficulty,omitempty"`
 	Input             string                   `json:"input"`
 	FollowUps         []string                 `json:"follow_ups,omitempty"`
-	AgentResult       *agent.RunResult         `json:"agent_result,omitempty"`
+	AgentResult       *runtime.RunResult       `json:"agent_result,omitempty"`
 	TurnResults       []ConversationTurnResult `json:"turn_results,omitempty"`
 	AgentError        string                   `json:"agent_error,omitempty"`
 	Evaluation        Evaluation               `json:"evaluation"`
 	ScoreUploadErrors []string                 `json:"score_upload_errors,omitempty"`
 }
 
-// Run executes each dataset case independently, preserving result order.
+// Run 按顺序执行每个 Dataset case，并保持结果顺序。
 func (r Runner) Run(ctx context.Context, dataset Dataset) ([]CaseResult, error) {
-	if r.AgentForCase == nil {
-		return nil, fmt.Errorf("AgentForCase is required")
+	if r.RunnerForCase == nil {
+		return nil, fmt.Errorf("RunnerForCase is required")
 	}
 
 	results := make([]CaseResult, 0, len(dataset.Cases))
@@ -63,7 +62,7 @@ func (r Runner) Run(ctx context.Context, dataset Dataset) ([]CaseResult, error) 
 			return results, err
 		}
 
-		runner, err := r.AgentForCase(item)
+		runner, err := r.RunnerForCase(item)
 		if err != nil {
 			return results, fmt.Errorf(
 				"create runner for %s: %w",
@@ -72,10 +71,10 @@ func (r Runner) Run(ctx context.Context, dataset Dataset) ([]CaseResult, error) 
 			)
 		}
 		if runner == nil {
-			return results, fmt.Errorf("AgentForCase returned nil for %s", item.ID)
+			return results, fmt.Errorf("RunnerForCase returned nil for %s", item.ID)
 		}
 		turnResults, runErr := runConversation(ctx, runner, item)
-		rawResults := make([]*agent.RunResult, 0, len(turnResults))
+		rawResults := make([]*runtime.RunResult, 0, len(turnResults))
 		for _, turnResult := range turnResults {
 			rawResults = append(rawResults, turnResult.AgentResult)
 		}
@@ -141,7 +140,7 @@ func (r Runner) Run(ctx context.Context, dataset Dataset) ([]CaseResult, error) 
 
 func runConversation(
 	ctx context.Context,
-	runner agent.Runner,
+	runner runtime.Runner,
 	item Case,
 ) ([]ConversationTurnResult, error) {
 	inputs := item.userInputs()
@@ -168,18 +167,18 @@ func runConversation(
 	return turnResults, nil
 }
 
-func aggregateRunResults(results []*agent.RunResult) *agent.RunResult {
-	var aggregate *agent.RunResult
+func aggregateRunResults(results []*runtime.RunResult) *runtime.RunResult {
+	var aggregate *runtime.RunResult
 	for _, result := range results {
 		if result == nil {
 			continue
 		}
 		if aggregate == nil {
-			aggregate = &agent.RunResult{
+			aggregate = &runtime.RunResult{
 				Input:             result.Input,
 				Answer:            result.Answer,
 				Turns:             result.Turns,
-				ToolCalls:         append([]agent.ToolCallRecord(nil), result.ToolCalls...),
+				ToolCalls:         append([]runtime.ToolCallRecord(nil), result.ToolCalls...),
 				Usage:             result.Usage,
 				Latency:           result.Latency,
 				FinalReason:       result.FinalReason,
