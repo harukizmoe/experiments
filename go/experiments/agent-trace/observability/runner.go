@@ -4,28 +4,29 @@ import (
 	"context"
 	"strconv"
 
-	agent "harukizmoe/experiments/go/experiments/agent-trace/agent"
+	runtime "harukizmoe/experiments/go/experiments/agent-trace/runtime"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 )
 
-type TracedAgent struct {
-	next           agent.Runner
+// TracedRunner 为完成的 Runtime Runner 调用创建根观测 Span，并记录结果或错误。
+type TracedRunner struct {
+	next           runtime.Runner
 	tracer         trace.Tracer
 	traceContext   TraceContext
 	captureContent bool
 }
 
-func WrapAgent(
-	next agent.Runner,
+// WrapRunner 在 Runtime Runner 外部添加完成执行级观测，不改变 Runner 的同步契约。
+func WrapRunner(
+	next runtime.Runner,
 	tracer trace.Tracer,
 	traceContext TraceContext,
 	captureContent bool,
-) agent.Runner {
-
-	return &TracedAgent{
+) runtime.Runner {
+	return &TracedRunner{
 		next:           next,
 		tracer:         tracer,
 		traceContext:   traceContext,
@@ -33,16 +34,14 @@ func WrapAgent(
 	}
 }
 
-func (a *TracedAgent) Run(
+func (r *TracedRunner) Run(
 	ctx context.Context,
 	input string,
-) (*agent.RunResult, error) {
-
-	propagated, err :=
-		WithTraceContext(
-			ctx,
-			a.traceContext,
-		)
+) (*runtime.RunResult, error) {
+	propagated, err := WithTraceContext(
+		ctx,
+		r.traceContext,
+	)
 
 	if err == nil {
 		ctx = propagated
@@ -55,38 +54,37 @@ func (a *TracedAgent) Run(
 		),
 	}
 
-	if a.traceContext.TraceName != "" {
+	if r.traceContext.TraceName != "" {
 		attrs = append(
 			attrs,
 			attribute.String(
 				attrTraceName,
-				a.traceContext.TraceName,
+				r.traceContext.TraceName,
 			),
 		)
 	}
 
-	if a.traceContext.Environment != "" {
+	if r.traceContext.Environment != "" {
 		attrs = append(
 			attrs,
 			attribute.String(
 				attrEnvironment,
-				a.traceContext.Environment,
+				r.traceContext.Environment,
 			),
 		)
 	}
 
-	if a.traceContext.Version != "" {
+	if r.traceContext.Version != "" {
 		attrs = append(
 			attrs,
 			attribute.String(
 				attrVersion,
-				a.traceContext.Version,
+				r.traceContext.Version,
 			),
 		)
 	}
 
-	for key, value := range a.traceContext.Metadata {
-
+	for key, value := range r.traceContext.Metadata {
 		if value != "" {
 			attrs = append(
 				attrs,
@@ -99,7 +97,7 @@ func (a *TracedAgent) Run(
 		}
 	}
 
-	if a.captureContent {
+	if r.captureContent {
 		attrs = append(
 			attrs,
 			attribute.String(
@@ -123,7 +121,7 @@ func (a *TracedAgent) Run(
 		)
 	}
 
-	ctx, span := a.tracer.Start(
+	ctx, span := r.tracer.Start(
 		ctx,
 		"agent.run",
 		trace.WithSpanKind(
@@ -138,27 +136,24 @@ func (a *TracedAgent) Run(
 
 	spanContext := span.SpanContext()
 
-	result, runErr :=
-		a.next.Run(
-			ctx,
-			input,
-		)
+	result, runErr := r.next.Run(
+		ctx,
+		input,
+	)
 
 	if result != nil {
 		if spanContext.TraceID().
 			IsValid() {
 
-			result.TraceID =
-				spanContext.TraceID().
-					String()
+			result.TraceID = spanContext.TraceID().
+				String()
 		}
 
 		if spanContext.SpanID().
 			IsValid() {
 
-			result.RootObservationID =
-				spanContext.SpanID().
-					String()
+			result.RootObservationID = spanContext.SpanID().
+				String()
 		}
 
 		span.SetAttributes(
@@ -204,7 +199,7 @@ func (a *TracedAgent) Run(
 			),
 		)
 
-		if a.captureContent {
+		if r.captureContent {
 			span.SetAttributes(
 				attribute.String(
 					attrObservationOutput,

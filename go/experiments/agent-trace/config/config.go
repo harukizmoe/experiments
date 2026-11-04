@@ -94,8 +94,8 @@ func Load() (Config, error) {
 			RunName:       valueOrDefault("EVAL_RUN_NAME", "baseline-v1"),
 			TraceName:     valueOrDefault("EVAL_TRACE_NAME", "agent-eval"),
 			Environment:   valueOrDefault("EVAL_ENVIRONMENT", "experiment"),
-			UploadDataset: true,
-			UploadScores:  true,
+			UploadDataset: false,
+			UploadScores:  false,
 		},
 	}
 

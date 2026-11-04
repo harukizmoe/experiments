@@ -1,4 +1,4 @@
-package agent_trace_agent
+package agent_trace_runtime
 
 import (
 	"context"
@@ -9,7 +9,7 @@ import (
 	tools "harukizmoe/experiments/go/experiments/agent-trace/tools"
 )
 
-func TestAgentRunsAfterSalesToolSequence(t *testing.T) {
+func TestEngineRunsAfterSalesToolSequence(t *testing.T) {
 	fake := &scriptedLLM{
 		responses: []*llm.Response{
 			{
@@ -76,14 +76,18 @@ func TestAgentRunsAfterSalesToolSequence(t *testing.T) {
 		t.Fatalf("NewRegistry() error = %v", err)
 	}
 
-	a, err := New(fake, registry, Config{MaxTurns: 5})
+	engine, err := NewEngine(fake, registry, Config{MaxTurns: 5})
 	if err != nil {
-		t.Fatalf("New() error = %v", err)
+		t.Fatalf("NewEngine() error = %v", err)
 	}
 
-	result, err := a.Run(context.Background(), "请判断 A100 是否可以退货并估算退款金额。")
+	result, _, err := engine.RunWithHistory(
+		context.Background(),
+		"请判断 A100 是否可以退货并估算退款金额。",
+		[]llm.Message{{Role: llm.RoleSystem, Content: "test system prompt"}},
+	)
 	if err != nil {
-		t.Fatalf("Run() error = %v", err)
+		t.Fatalf("RunWithHistory() error = %v", err)
 	}
 
 	wantNames := []string{

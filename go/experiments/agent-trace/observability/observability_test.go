@@ -5,8 +5,11 @@ import (
 	"encoding/json"
 	"testing"
 
-	agent "harukizmoe/experiments/go/experiments/agent-trace/agent"
+	agentpkg "harukizmoe/experiments/go/experiments/agent-trace/agent"
 	llm "harukizmoe/experiments/go/experiments/agent-trace/llm"
+	policy "harukizmoe/experiments/go/experiments/agent-trace/policy"
+	runtime "harukizmoe/experiments/go/experiments/agent-trace/runtime"
+	sessionpkg "harukizmoe/experiments/go/experiments/agent-trace/session"
 	tools "harukizmoe/experiments/go/experiments/agent-trace/tools"
 
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -22,20 +25,16 @@ func (s *scriptedLLM) Generate(
 	_ context.Context,
 	_ llm.Request,
 ) (*llm.Response, error) {
+	response := s.responses[0]
 
-	response :=
-		s.responses[0]
-
-	s.responses =
-		s.responses[1:]
+	s.responses = s.responses[1:]
 
 	return response, nil
 }
 
-func TestAgentLLMToolTraceHierarchy(
+func TestRunnerLLMToolTraceHierarchy(
 	t *testing.T,
 ) {
-
 	recorder := tracetest.NewSpanRecorder()
 
 	tp := sdktrace.NewTracerProvider(
@@ -119,15 +118,13 @@ func TestAgentLLMToolTraceHierarchy(
 		true,
 	)
 
-	registry, err :=
-		tools.NewRegistry(
-			WrapTool(
-				tools.OrderTool{},
-				tracer,
-				true,
-			),
-		)
-
+	registry, err := tools.NewRegistry(
+		WrapTool(
+			tools.OrderTool{},
+			tracer,
+			true,
+		),
+	)
 	if err != nil {
 		t.Fatalf(
 			"NewRegistry() error = %v",
@@ -135,32 +132,39 @@ func TestAgentLLMToolTraceHierarchy(
 		)
 	}
 
-	baseAgent, err :=
-		agent.New(
-			wrappedLLM,
-			registry,
-			agent.Config{
-				MaxTurns: 4,
-			},
-		)
-
+	engine, err := runtime.NewEngine(
+		wrappedLLM,
+		registry,
+		runtime.Config{
+			MaxTurns: 4,
+		},
+	)
 	if err != nil {
 		t.Fatalf(
-			"agent.New() error = %v",
+			"runtime.NewEngine() error = %v",
 			err,
 		)
 	}
 
-	runner := WrapAgent(
-		baseAgent,
+	executor, err := agentpkg.New(engine)
+	if err != nil {
+		t.Fatalf("agent.New() error = %v", err)
+	}
+	conversation, err := sessionpkg.New(
+		executor,
+		policy.InitialHistory(),
+	)
+	if err != nil {
+		t.Fatalf("session.New() error = %v", err)
+	}
+
+	runner := WrapRunner(
+		conversation,
 		tracer,
 		TraceContext{
-			TraceName: "agent-chat",
-
+			TraceName:   "agent-chat",
 			Environment: "test",
-
-			Version: "phase-2",
-
+			Version:     "phase-2",
 			Metadata: map[string]string{
 				"phase": "2",
 			},
@@ -172,7 +176,6 @@ func TestAgentLLMToolTraceHierarchy(
 		context.Background(),
 		"A102 refunded?",
 	)
-
 	if err != nil {
 		t.Fatalf(
 			"Run() error = %v",
@@ -198,10 +201,9 @@ func TestAgentLLMToolTraceHierarchy(
 		)
 	}
 
-	byName :=
-		make(
-			map[string][]sdktrace.ReadOnlySpan,
-		)
+	byName := make(
+		map[string][]sdktrace.ReadOnlySpan,
+	)
 
 	for _, span := range spans {
 		byName[span.Name()] = append(
@@ -221,8 +223,7 @@ func TestAgentLLMToolTraceHierarchy(
 		}
 	}
 
-	root :=
-		byName["agent.run"][0]
+	root := byName["agent.run"][0]
 
 	if root.Parent().
 		IsValid() {
@@ -276,7 +277,6 @@ func TestAgentLLMToolTraceHierarchy(
 		root,
 		attrTraceName,
 	); got != "agent-chat" {
-
 		t.Fatalf(
 			"trace name attribute = %q",
 			got,
@@ -287,7 +287,6 @@ func TestAgentLLMToolTraceHierarchy(
 		byName["tool.lookup_order"][0],
 		attrTraceName,
 	); got != "agent-chat" {
-
 		t.Fatalf(
 			"propagated trace name on tool = %q",
 			got,
@@ -298,7 +297,6 @@ func TestAgentLLMToolTraceHierarchy(
 func TestTracesEndpoint(
 	t *testing.T,
 ) {
-
 	tests := []struct {
 		base     string
 		explicit string
@@ -322,12 +320,10 @@ func TestTracesEndpoint(
 	}
 
 	for _, tt := range tests {
-		got, err :=
-			tracesEndpoint(
-				tt.base,
-				tt.explicit,
-			)
-
+		got, err := tracesEndpoint(
+			tt.base,
+			tt.explicit,
+		)
 		if err != nil {
 			t.Fatalf(
 				"tracesEndpoint() error = %v",
@@ -349,9 +345,7 @@ func stringAttribute(
 	span sdktrace.ReadOnlySpan,
 	key string,
 ) string {
-
 	for _, kv := range span.Attributes() {
-
 		if string(kv.Key) ==
 			key {
 

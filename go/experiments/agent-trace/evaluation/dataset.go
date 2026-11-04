@@ -13,12 +13,13 @@ type Dataset struct {
 	Cases []Case `json:"cases"`
 }
 
-// Case describes one user input and its observable expectations.
+// Case 描述一条初始用户输入、可选的后续输入以及可观察评估期望。
 type Case struct {
-	ID       string   `json:"id"`
-	Input    string   `json:"input"`
-	Expected Expected `json:"expected"`
-	Metadata Metadata `json:"metadata"`
+	ID        string   `json:"id"`
+	Input     string   `json:"input"`
+	FollowUps []string `json:"follow_ups,omitempty"`
+	Expected  Expected `json:"expected"`
+	Metadata  Metadata `json:"metadata"`
 }
 
 // Expected 记录回答、工具轨迹、业务结果和资源限制等可观察评估契约。
@@ -31,6 +32,26 @@ type Expected struct {
 	ExpectedBusinessOutcome *BusinessOutcome  `json:"expected_business_outcome,omitempty"`
 	MaxToolCalls            int               `json:"max_tool_calls,omitempty"`
 	MaxTurns                int               `json:"max_turns,omitempty"`
+	TurnExpectations        []TurnExpectation `json:"turn_expectations,omitempty"`
+}
+
+// TurnExpectation 描述一个用户轮次的回答和工具策略。
+// 业务结果只在整个对话的 Expected 上判断，避免把中间 assistant 消息误当成最终结论。
+type TurnExpectation struct {
+	AnswerRules    []AnswerRule      `json:"answer_rules,omitempty"`
+	RequiredTools  []ToolExpectation `json:"required_tools,omitempty"`
+	OptionalTools  []string          `json:"optional_tools,omitempty"`
+	ForbiddenTools []string          `json:"forbidden_tools,omitempty"`
+	ToolOrder      []string          `json:"tool_order,omitempty"`
+	MaxToolCalls   int               `json:"max_tool_calls,omitempty"`
+	MaxTurns       int               `json:"max_turns,omitempty"`
+}
+
+// userInputs 返回按交互顺序排列的用户消息；Input 保持兼容单轮 Dataset。
+func (item Case) userInputs() []string {
+	inputs := make([]string, 1, 1+len(item.FollowUps))
+	inputs[0] = item.Input
+	return append(inputs, item.FollowUps...)
 }
 
 // BusinessOutcome 表示售后判断期望得到的结构化结果。
@@ -112,6 +133,20 @@ func validateCase(item Case) error {
 	if item.Expected.MaxToolCalls < 0 || item.Expected.MaxTurns < 0 {
 		return fmt.Errorf("case %s max limits must not be negative", item.ID)
 	}
+	for i, input := range item.FollowUps {
+		if strings.TrimSpace(input) == "" {
+			return fmt.Errorf("case %s follow_ups[%d] must not be empty", item.ID, i)
+		}
+	}
+	if len(item.Expected.TurnExpectations) > 0 &&
+		len(item.Expected.TurnExpectations) != len(item.userInputs()) {
+		return fmt.Errorf("case %s turn_expectations must match input turn count", item.ID)
+	}
+	for i, expectation := range item.Expected.TurnExpectations {
+		if err := validateTurnExpectation(item.ID, i, expectation); err != nil {
+			return err
+		}
+	}
 	for i, rule := range item.Expected.AnswerRules {
 		if len(rule.AnyOf) == 0 {
 			return fmt.Errorf("case %s answer_rules[%d].any_of must not be empty", item.ID, i)
@@ -145,6 +180,38 @@ func validateCase(item Case) error {
 			if strings.TrimSpace(code) == "" {
 				return fmt.Errorf("case %s expected_business_outcome.reason_codes[%d] must not be empty", item.ID, i)
 			}
+		}
+	}
+	return nil
+}
+
+func validateTurnExpectation(caseID string, index int, expectation TurnExpectation) error {
+	if expectation.MaxToolCalls < 0 || expectation.MaxTurns < 0 {
+		return fmt.Errorf("case %s turn_expectations[%d] max limits must not be negative", caseID, index)
+	}
+	for ruleIndex, rule := range expectation.AnswerRules {
+		if len(rule.AnyOf) == 0 {
+			return fmt.Errorf("case %s turn_expectations[%d].answer_rules[%d].any_of must not be empty", caseID, index, ruleIndex)
+		}
+	}
+	for toolIndex, tool := range expectation.RequiredTools {
+		if strings.TrimSpace(tool.Name) == "" {
+			return fmt.Errorf("case %s turn_expectations[%d].required_tools[%d].name is required", caseID, index, toolIndex)
+		}
+	}
+	for nameIndex, name := range expectation.OptionalTools {
+		if strings.TrimSpace(name) == "" {
+			return fmt.Errorf("case %s turn_expectations[%d].optional_tools[%d] must not be empty", caseID, index, nameIndex)
+		}
+	}
+	for nameIndex, name := range expectation.ForbiddenTools {
+		if strings.TrimSpace(name) == "" {
+			return fmt.Errorf("case %s turn_expectations[%d].forbidden_tools[%d] must not be empty", caseID, index, nameIndex)
+		}
+	}
+	for nameIndex, name := range expectation.ToolOrder {
+		if strings.TrimSpace(name) == "" {
+			return fmt.Errorf("case %s turn_expectations[%d].tool_order[%d] must not be empty", caseID, index, nameIndex)
 		}
 	}
 	return nil

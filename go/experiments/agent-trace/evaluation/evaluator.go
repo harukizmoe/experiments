@@ -7,7 +7,7 @@ import (
 	"strings"
 	"unicode"
 
-	agent "harukizmoe/experiments/go/experiments/agent-trace/agent"
+	runtime "harukizmoe/experiments/go/experiments/agent-trace/runtime"
 )
 
 const (
@@ -27,15 +27,31 @@ type Metric struct {
 
 // Evaluation contains case-level pass/fail state and its diagnostic metrics.
 type Evaluation struct {
-	CaseID  string   `json:"case_id"`
+	CaseID          string           `json:"case_id"`
+	Passed          bool             `json:"passed"`
+	Metrics         []Metric         `json:"metrics"`
+	TurnEvaluations []TurnEvaluation `json:"turn_evaluations,omitempty"`
+}
+
+// TurnEvaluation 记录一条用户轮次的确定性检查结果。
+type TurnEvaluation struct {
+	Turn    int      `json:"turn"`
+	Input   string   `json:"input"`
 	Passed  bool     `json:"passed"`
 	Metrics []Metric `json:"metrics"`
 }
 
-// Evaluate compares an Agent result with one case's observable expectations.
-func Evaluate(item Case, result *agent.RunResult, runErr error) Evaluation {
+// Evaluate 将单轮 Runtime 结果与案例期望进行比较。
+func Evaluate(item Case, result *runtime.RunResult, runErr error) Evaluation {
+	return EvaluateConversation(item, []*runtime.RunResult{result}, runErr)
+}
+
+// EvaluateConversation 同时检查最终聚合结果和每个已配置的用户轮次。
+// 聚合结果覆盖全部工具调用，TurnExpectations 则约束澄清和查询发生在哪一轮。
+func EvaluateConversation(item Case, turnResults []*runtime.RunResult, runErr error) Evaluation {
+	result := aggregateRunResults(turnResults)
 	if result == nil {
-		result = &agent.RunResult{}
+		result = &runtime.RunResult{}
 	}
 
 	answerOK := answerMatches(item.Expected.AnswerRules, result.Answer)
@@ -44,19 +60,21 @@ func Evaluate(item Case, result *agent.RunResult, runErr error) Evaluation {
 	businessOK, businessComment := businessOutcomeCorrect(item.Expected, result.ToolCalls)
 	argumentAccuracy, argumentComment := toolArgumentAccuracy(item.Expected.RequiredTools, result.ToolCalls)
 	precision, recall, unnecessary := toolPrecisionRecall(item.Expected, result.ToolCalls)
+	conversationOK, turnEvaluations, conversationComment := evaluateTurnExpectations(item, turnResults)
 
 	turnsOK := item.Expected.MaxTurns == 0 || result.Turns <= item.Expected.MaxTurns
 	toolCountOK := item.Expected.MaxToolCalls == 0 || len(result.ToolCalls) <= item.Expected.MaxToolCalls
 
-	// 业务结果和工具顺序属于任务正确性；效率指标仍单独保留，便于定位退化原因。
-	taskOK := runErr == nil && answerOK && selectionOK && orderOK && businessOK && argumentAccuracy == 1 && turnsOK && toolCountOK
+	// 业务结果、工具顺序和逐轮契约共同定义多轮任务是否真正完成。
+	taskOK := runErr == nil && answerOK && selectionOK && orderOK && businessOK && argumentAccuracy == 1 && turnsOK && toolCountOK && conversationOK
 
 	metrics := []Metric{
-		booleanMetric("task_success", taskOK, taskComment(taskOK, runErr, answerOK, selectionOK, orderOK, businessOK, argumentAccuracy, turnsOK, toolCountOK)),
+		booleanMetric("task_success", taskOK, taskComment(taskOK, runErr, answerOK, selectionOK, orderOK, businessOK, argumentAccuracy, turnsOK, toolCountOK, conversationOK)),
 		booleanMetric("answer_correctness", answerOK, answerComment(answerOK, item.Expected.AnswerRules, result.Answer)),
 		booleanMetric("tool_selection_accuracy", selectionOK, selectionComment),
 		booleanMetric("tool_order_accuracy", orderOK, orderComment),
 		booleanMetric("business_outcome_correctness", businessOK, businessComment),
+		booleanMetric("conversation_turn_correctness", conversationOK, conversationComment),
 		{
 			Name:     "tool_argument_accuracy",
 			Value:    argumentAccuracy,
@@ -96,10 +114,111 @@ func Evaluate(item Case, result *agent.RunResult, runErr error) Evaluation {
 	}
 
 	return Evaluation{
-		CaseID:  item.ID,
-		Passed:  taskOK,
-		Metrics: metrics,
+		CaseID:          item.ID,
+		Passed:          taskOK,
+		Metrics:         metrics,
+		TurnEvaluations: turnEvaluations,
 	}
+}
+
+func evaluateTurnExpectations(item Case, actual []*runtime.RunResult) (bool, []TurnEvaluation, string) {
+	expected := item.Expected.TurnExpectations
+	if len(expected) == 0 {
+		return true, nil, "no per-turn expectations configured"
+	}
+	inputs := item.userInputs()
+	if len(expected) != len(inputs) {
+		return false, nil, fmt.Sprintf("configured %d turn expectations for %d inputs", len(expected), len(inputs))
+	}
+
+	evaluations := make([]TurnEvaluation, 0, len(expected))
+	allOK := true
+	comment := fmt.Sprintf("all %d configured conversation turns passed", len(expected))
+	for index, expectation := range expected {
+		result := &runtime.RunResult{}
+		if index < len(actual) && actual[index] != nil {
+			result = actual[index]
+		}
+
+		turnExpected := Expected{
+			AnswerRules:    expectation.AnswerRules,
+			RequiredTools:  expectation.RequiredTools,
+			OptionalTools:  expectation.OptionalTools,
+			ForbiddenTools: expectation.ForbiddenTools,
+			ToolOrder:      expectation.ToolOrder,
+			MaxToolCalls:   expectation.MaxToolCalls,
+			MaxTurns:       expectation.MaxTurns,
+		}
+		answerOK := answerMatches(expectation.AnswerRules, result.Answer)
+		selectionOK, selectionComment := toolSelection(turnExpected, result.ToolCalls)
+		orderOK, orderComment := toolOrder(expectation.ToolOrder, result.ToolCalls)
+		argumentAccuracy, argumentComment := toolArgumentAccuracy(expectation.RequiredTools, result.ToolCalls)
+		turnsOK := expectation.MaxTurns == 0 || result.Turns <= expectation.MaxTurns
+		toolCountOK := expectation.MaxToolCalls == 0 || len(result.ToolCalls) <= expectation.MaxToolCalls
+		turnOK := answerOK && selectionOK && orderOK && argumentAccuracy == 1 && turnsOK && toolCountOK
+		if !turnOK && allOK {
+			comment = fmt.Sprintf("turn %d failed: %s", index+1, turnTaskComment(answerOK, selectionOK, orderOK, argumentAccuracy, turnsOK, toolCountOK))
+		}
+		allOK = allOK && turnOK
+
+		metrics := []Metric{
+			booleanMetric("turn_success", turnOK, turnTaskComment(answerOK, selectionOK, orderOK, argumentAccuracy, turnsOK, toolCountOK)),
+			booleanMetric("answer_correctness", answerOK, answerComment(answerOK, expectation.AnswerRules, result.Answer)),
+			booleanMetric("tool_selection_accuracy", selectionOK, selectionComment),
+			booleanMetric("tool_order_accuracy", orderOK, orderComment),
+			{
+				Name:     "tool_argument_accuracy",
+				Value:    argumentAccuracy,
+				DataType: DataTypeNumeric,
+				Comment:  argumentComment,
+			},
+			{
+				Name:     "turn_count",
+				Value:    float64(result.Turns),
+				DataType: DataTypeNumeric,
+				Comment:  limitComment("turns", result.Turns, expectation.MaxTurns),
+			},
+			{
+				Name:     "tool_call_count",
+				Value:    float64(len(result.ToolCalls)),
+				DataType: DataTypeNumeric,
+				Comment:  limitComment("tool calls", len(result.ToolCalls), expectation.MaxToolCalls),
+			},
+		}
+		evaluations = append(evaluations, TurnEvaluation{
+			Turn:    index + 1,
+			Input:   inputs[index],
+			Passed:  turnOK,
+			Metrics: metrics,
+		})
+	}
+	return allOK, evaluations, comment
+}
+
+func turnTaskComment(answerOK, selectionOK, orderOK bool, argumentAccuracy float64, turnsOK, toolCountOK bool) string {
+	if answerOK && selectionOK && orderOK && argumentAccuracy == 1 && turnsOK && toolCountOK {
+		return "turn answer, tool policy, order, arguments, and limits passed"
+	}
+	parts := []string{}
+	if !answerOK {
+		parts = append(parts, "answer_failed")
+	}
+	if !selectionOK {
+		parts = append(parts, "tool_selection_failed")
+	}
+	if !orderOK {
+		parts = append(parts, "tool_order_failed")
+	}
+	if argumentAccuracy < 1 {
+		parts = append(parts, "tool_arguments_failed")
+	}
+	if !turnsOK {
+		parts = append(parts, "max_turns_exceeded")
+	}
+	if !toolCountOK {
+		parts = append(parts, "max_tool_calls_exceeded")
+	}
+	return strings.Join(parts, ", ")
 }
 
 func booleanMetric(name string, ok bool, comment string) Metric {
@@ -131,7 +250,7 @@ func answerMatches(rules []AnswerRule, answer string) bool {
 	return true
 }
 
-func toolSelection(expected Expected, actual []agent.ToolCallRecord) (bool, string) {
+func toolSelection(expected Expected, actual []runtime.ToolCallRecord) (bool, string) {
 	required := toolCountsFromExpectations(expected.RequiredTools)
 	actualCounts := toolCounts(actual)
 
@@ -168,7 +287,7 @@ func toolSelection(expected Expected, actual []agent.ToolCallRecord) (bool, stri
 }
 
 // toolOrder 检查有依赖关系的工具是否按规定顺序出现。
-func toolOrder(expected []string, actual []agent.ToolCallRecord) (bool, string) {
+func toolOrder(expected []string, actual []runtime.ToolCallRecord) (bool, string) {
 	if len(expected) == 0 {
 		return true, "no tool order configured"
 	}
@@ -221,7 +340,7 @@ type observedCalculation struct {
 }
 
 // businessOutcomeCorrect 根据与期望参数绑定的只读工具结果推导业务判断。
-func businessOutcomeCorrect(expected Expected, calls []agent.ToolCallRecord) (bool, string) {
+func businessOutcomeCorrect(expected Expected, calls []runtime.ToolCallRecord) (bool, string) {
 	outcome := expected.ExpectedBusinessOutcome
 	if outcome == nil {
 		return true, "no expected business outcome configured"
@@ -348,7 +467,7 @@ func businessOutcomeCorrect(expected Expected, calls []agent.ToolCallRecord) (bo
 }
 
 // decodeToolResult 解码与期望参数匹配的唯一工具结果；重复匹配直接拒绝。
-func decodeToolResult(name string, expectedArguments map[string]any, calls []agent.ToolCallRecord, target any) error {
+func decodeToolResult(name string, expectedArguments map[string]any, calls []runtime.ToolCallRecord, target any) error {
 	matches := 0
 	for _, call := range calls {
 		if call.Name != name {
@@ -426,7 +545,7 @@ func closeEnough(left, right float64) bool {
 	return math.Abs(left-right) < 1e-9
 }
 
-func toolArgumentAccuracy(expected []ToolExpectation, actual []agent.ToolCallRecord) (float64, string) {
+func toolArgumentAccuracy(expected []ToolExpectation, actual []runtime.ToolCallRecord) (float64, string) {
 	var withArguments []ToolExpectation
 	for _, item := range expected {
 		if len(item.Arguments) > 0 {
@@ -455,14 +574,11 @@ func toolArgumentAccuracy(expected []ToolExpectation, actual []agent.ToolCallRec
 	return value, fmt.Sprintf("matched %d/%d required tool argument sets", matched, len(withArguments))
 }
 
-func toolPrecisionRecall(expected Expected, actual []agent.ToolCallRecord) (precision, recall float64, unnecessary int) {
-	requiredQuota := toolCountsFromExpectations(expected.RequiredTools)
-	allowedQuota := map[string]int{}
-	for name, count := range requiredQuota {
-		allowedQuota[name] = count
-	}
-	for _, name := range expected.OptionalTools {
-		allowedQuota[name]++
+func toolPrecisionRecall(expected Expected, actual []runtime.ToolCallRecord) (precision, recall float64, unnecessary int) {
+	requiredQuota, optionalQuota := conversationToolQuotas(expected)
+	allowedQuota := cloneCounts(requiredQuota)
+	for name, count := range optionalQuota {
+		allowedQuota[name] += count
 	}
 
 	relevant := 0
@@ -477,7 +593,7 @@ func toolPrecisionRecall(expected Expected, actual []agent.ToolCallRecord) (prec
 	}
 
 	if len(actual) == 0 {
-		if len(expected.RequiredTools) == 0 {
+		if len(requiredQuota) == 0 {
 			precision = 1
 		} else {
 			precision = 0
@@ -499,6 +615,33 @@ func toolPrecisionRecall(expected Expected, actual []agent.ToolCallRecord) (prec
 		recall = float64(requiredMatched) / float64(requiredTotal)
 	}
 	return precision, recall, unnecessary
+}
+
+// conversationToolQuotas 使用逐轮工具契约统计多轮对话的聚合配额。
+// 这样，前一轮的失败查询仍是该轮的必要调用，不会被效率指标误报为无关调用。
+func conversationToolQuotas(expected Expected) (required, optional map[string]int) {
+	required = map[string]int{}
+	optional = map[string]int{}
+	if len(expected.TurnExpectations) == 0 {
+		required = toolCountsFromExpectations(expected.RequiredTools)
+		for _, name := range expected.OptionalTools {
+			optional[name]++
+		}
+		return required, optional
+	}
+
+	for _, turn := range expected.TurnExpectations {
+		for name, count := range toolCountsFromExpectations(turn.RequiredTools) {
+			required[name] += count
+		}
+		for _, name := range turn.OptionalTools {
+			optional[name]++
+		}
+	}
+	for _, name := range expected.OptionalTools {
+		optional[name]++
+	}
+	return required, optional
 }
 
 func argumentsMatch(toolName string, expected map[string]any, raw json.RawMessage) bool {
@@ -571,7 +714,7 @@ func removeWhitespace(s string) string {
 	}, s)
 }
 
-func toolCounts(calls []agent.ToolCallRecord) map[string]int {
+func toolCounts(calls []runtime.ToolCallRecord) map[string]int {
 	counts := map[string]int{}
 	for _, call := range calls {
 		counts[call.Name]++
@@ -613,9 +756,9 @@ func answerComment(ok bool, rules []AnswerRule, answer string) string {
 	return fmt.Sprintf("answer did not satisfy all rules; answer=%q", truncate(answer, 180))
 }
 
-func taskComment(ok bool, runErr error, answerOK, selectionOK, orderOK, businessOK bool, argumentAccuracy float64, turnsOK, toolCountOK bool) string {
+func taskComment(ok bool, runErr error, answerOK, selectionOK, orderOK, businessOK bool, argumentAccuracy float64, turnsOK, toolCountOK, conversationOK bool) string {
 	if ok {
-		return "answer, tool policy, order, business outcome, arguments, and configured limits all passed"
+		return "answer, tool policy, order, business outcome, arguments, conversation turns, and configured limits all passed"
 	}
 	parts := []string{}
 	if runErr != nil {
@@ -641,6 +784,9 @@ func taskComment(ok bool, runErr error, answerOK, selectionOK, orderOK, business
 	}
 	if !toolCountOK {
 		parts = append(parts, "max_tool_calls_exceeded")
+	}
+	if !conversationOK {
+		parts = append(parts, "conversation_turn_failed")
 	}
 	return strings.Join(parts, ", ")
 }

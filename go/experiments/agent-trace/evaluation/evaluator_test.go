@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	agent "harukizmoe/experiments/go/experiments/agent-trace/agent"
+	runtime "harukizmoe/experiments/go/experiments/agent-trace/runtime"
 )
 
 func TestEvaluateAllowsOptionalCalculator(t *testing.T) {
@@ -22,10 +22,10 @@ func TestEvaluateAllowsOptionalCalculator(t *testing.T) {
 			MaxTurns:      3,
 		},
 	}
-	result := &agent.RunResult{
+	result := &runtime.RunResult{
 		Answer: "总价是 387 元。",
 		Turns:  2,
-		ToolCalls: []agent.ToolCallRecord{{
+		ToolCalls: []runtime.ToolCallRecord{{
 			Name:      "get_product",
 			Arguments: json.RawMessage(`{"product_id":"p100"}`),
 		}},
@@ -51,9 +51,9 @@ func TestEvaluatePenalizesWrongArgumentsAndExtraCall(t *testing.T) {
 			MaxToolCalls: 1,
 		},
 	}
-	result := &agent.RunResult{
+	result := &runtime.RunResult{
 		Turns: 2,
-		ToolCalls: []agent.ToolCallRecord{
+		ToolCalls: []runtime.ToolCallRecord{
 			{Name: "lookup_order", Arguments: json.RawMessage(`{"order_id":"A100"}`)},
 			{Name: "lookup_order", Arguments: json.RawMessage(`{"order_id":"A102"}`)},
 		},
@@ -98,10 +98,10 @@ func TestPhase3NotFoundAnswerVariantPasses(t *testing.T) {
 		t.Fatal("edge-002 case not found")
 	}
 
-	result := &agent.RunResult{
+	result := &runtime.RunResult{
 		Answer: "没有找到商品 P999，因此无法查询价格。",
 		Turns:  2,
-		ToolCalls: []agent.ToolCallRecord{{
+		ToolCalls: []runtime.ToolCallRecord{{
 			Name:      "get_product",
 			Arguments: json.RawMessage(`{"product_id":"P999"}`),
 		}},
@@ -128,10 +128,10 @@ func TestPhase3VerifiesExplicitOrderRequest(t *testing.T) {
 		t.Fatal("edge-001 case not found")
 	}
 
-	result := &agent.RunResult{
+	result := &runtime.RunResult{
 		Answer: "A100 的状态是：已发货。",
 		Turns:  2,
-		ToolCalls: []agent.ToolCallRecord{{
+		ToolCalls: []runtime.ToolCallRecord{{
 			Name:      "lookup_order",
 			Arguments: json.RawMessage(`{"order_id":"A100"}`),
 		}},

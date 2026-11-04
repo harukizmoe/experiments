@@ -21,6 +21,32 @@ type Message struct {
 	ToolCallID string     `json:"tool_call_id,omitempty"`
 }
 
+// CloneMessages 深拷贝消息及其 ToolCalls 参数，隔离不同历史持有者的可变数据。
+func CloneMessages(messages []Message) []Message {
+	if messages == nil {
+		return nil
+	}
+
+	cloned := make([]Message, len(messages), len(messages)+1)
+	for i, message := range messages {
+		cloned[i] = message
+		if len(message.ToolCalls) == 0 {
+			continue
+		}
+
+		cloned[i].ToolCalls = make([]ToolCall, len(message.ToolCalls))
+		for j, call := range message.ToolCalls {
+			cloned[i].ToolCalls[j] = call
+			cloned[i].ToolCalls[j].Arguments = append(
+				json.RawMessage(nil),
+				call.Arguments...,
+			)
+		}
+	}
+
+	return cloned
+}
+
 type ToolCall struct {
 	ID        string          `json:"id"`
 	Name      string          `json:"name"`
