@@ -34,6 +34,3 @@ obj/
 *.local.*
 tmp/
 *.log
-
-# 仓库内 worktree 目录
-.worktrees/
