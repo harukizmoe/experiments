@@ -1,8 +1,6 @@
 # 实验主目录
 
-各类实验的统一主目录：多语言、多主题，实验彼此独立。
-
-**Go 专项实验不在这里**，仍在 [`../Go/goexp`](../Go/goexp)（单一 module + `experiments/` 子目录）。本目录只放其他语言或以其他技术栈为中心的实验。
+各类实验的统一主目录：多语言、多主题，实验彼此独立。原 `Go/goexp` 仓库已并入本仓库的 [`go/`](go) 目录，本仓库接管其 GitHub 远端。
 
 ## 目录布局
 
@@ -10,26 +8,35 @@
 experiments/
 ├── README.md
 ├── AGENTS.md
-└── <experiment-name>/        # 一个实验一个目录，自带工具链清单
-    ├── README.md             # 目的、待验证问题、运行命令、实测结论
-    ├── Cargo.toml            # 或 go.mod / pyproject.toml / package.json
+├── go/                       # Go 实验：单一 module，沿用 goexp 约定
+│   ├── go.mod
+│   ├── AGENTS.md
+│   ├── CONTEXT.md
+│   ├── docs/
+│   └── experiments/
+│       └── <experiment-name>/
+└── <experiment-name>/        # 其他语言实验：自带工具链清单
+    ├── README.md
+    ├── Cargo.toml            # 或 pyproject.toml / package.json
     └── ...
 ```
 
 - 目录名 kebab-case，短、稳定、语义唯一，例如 `esp32-ble-probe`、`lua-mpv-ipc`。
-- 没有根级工作区清单：每个实验的依赖锁在自己的清单文件里，互不污染。
+- `go/` 之外没有根级工作区清单：每个实验的依赖锁在自己的清单文件里，互不污染。
 - 混合技术栈的实验（如 Rust 服务 + Python 脚本）放在同一个实验目录，各自保留清单。
 - 不预创建空目录；实验落地时才建目录。
 
-## 与 `../Go/goexp` 的边界
+## Go 实验
 
-| | `../Go/goexp` | 本目录 |
-| --- | --- | --- |
-| 语言 | 仅 Go | 其他语言 / 混合栈 |
-| 构建 | 单一 `go.mod` | 每个实验独立清单 |
-| 运行 | `go run ./experiments/<name>` | 各自 README 里的命令 |
+Go 实验统一放在 `go/`，共享一个 `go.mod`（module 名沿用 `harukizmoe/go-exp`），运行方式与约定见 [`go/README.md`](go/README.md) 与 [`go/AGENTS.md`](go/AGENTS.md)：
 
-需要 Go 与其他语言协作时，Go 侧留在 `goexp`，另一侧在本目录，跨仓交互写成网络/进程边界并在两侧 README 互相引用。
+```bash
+cd go
+go run ./experiments/<name>
+go test ./...
+```
+
+不要把 Go 实验拆到仓库根目录，也不要在根目录新增第二个 `go.mod`。
 
 ## 规范
 
@@ -43,10 +50,14 @@ experiments/
 ## 快速开始
 
 ```bash
-# 新建一个实验（以 Rust 为例）
+# Go 实验
+cd go && go test ./...
+
+# 新建其他语言实验（以 Rust 为例）
 cargo new --bin <experiment-name>
 $EDITOR <experiment-name>/README.md
-
-# 运行与验证交给各实验自己的工具链
-cd <experiment-name> && cargo test
 ```
+
+## 历史
+
+`harukizmoe/go-exp` 的全部提交历史经 `go/` 前缀重写后并入本仓库；迁移前的分支顶端保存在 `legacy/pre-migration`。

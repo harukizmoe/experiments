@@ -2,7 +2,7 @@
 
 ## 项目定位
 
-本目录是各类实验的统一主目录，多语言并存。Go 专项实验在 `../Go/goexp`，本目录不重复那套结构，也不新建 Go module 实验。
+本目录是各类实验的统一主目录，多语言并存。Go 实验统一在 `go/` 子目录（单一 `go.mod`，原 `goexp` 仓库），其余语言在根目录下各自独立成实验。
 
 每个实验是一个可独立运行、独立验证的学习单元；实验之间默认没有业务关系，不为了复用建立隐式耦合。
 
@@ -12,13 +12,19 @@
 experiments/
 ├── README.md
 ├── AGENTS.md
-└── <experiment-name>/          # kebab-case，短、稳定、唯一
+├── go/                         # Go 实验：单一 module，规则见 go/AGENTS.md
+│   ├── go.mod
+│   └── experiments/<experiment-name>/
+└── <experiment-name>/          # 其他语言实验，kebab-case，短、稳定、唯一
     ├── README.md
     ├── <manifest>              # Cargo.toml / pyproject.toml / package.json / CMakeLists.txt …
     └── <sources>
 ```
 
-- 目录名使用简短、全小写 kebab-case：`net-quic-hole`、`lua-mpv-ipc`，不用 `test1`、`新实验`。
+- Go 实验只在 `go/` 下新增；禁止在仓库根目录新建 `go.mod` 或第二个 Go module。
+- 根目录实验目录与 `go/` 平级，不要放进 `go/experiments/`，反之亦然。
+- 跨语言协作时用命令行或文件/网络边界连接，并在两侧 README 写清边界格式。
+- 非 Go 实验目录名使用简短、全小写 kebab-case：`net-quic-hole`、`lua-mpv-ipc`，不用 `test1`、`新实验`。
 - 不预创建空目录、占位文件或抽象层；实验真正需要时才添加子目录与源文件。
 - 每个实验的依赖只写在它自己的清单里。禁止根级工作区清单把多个实验的依赖混在一起。
 - 实验之间禁止互相导入/引用源码；需要共享时，必须是至少两个实验都真实需要的领域行为，提取为显式共享目录，并在双方 README 说明接口、收益与测试边界。
