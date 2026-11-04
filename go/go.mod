@@ -1,4 +1,4 @@
-module harukizmoe/go-exp
+module harukizmoe/experiments/go
 
 go 1.26.6
 

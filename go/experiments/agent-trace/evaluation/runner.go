@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"io"
 
-	runtime "harukizmoe/go-exp/experiments/agent-trace/runtime"
+	runtime "harukizmoe/experiments/go/experiments/agent-trace/runtime"
 )
 
 // ScoreSink receives one metric for a completed case.

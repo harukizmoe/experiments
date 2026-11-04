@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	llm "harukizmoe/go-exp/experiments/agent-trace/llm"
+	llm "harukizmoe/experiments/go/experiments/agent-trace/llm"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"

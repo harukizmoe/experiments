@@ -11,14 +11,14 @@ import (
 	"syscall"
 	"time"
 
-	agent "harukizmoe/go-exp/experiments/agent-trace/agent"
-	config "harukizmoe/go-exp/experiments/agent-trace/config"
-	llm "harukizmoe/go-exp/experiments/agent-trace/llm"
-	observability "harukizmoe/go-exp/experiments/agent-trace/observability"
-	policy "harukizmoe/go-exp/experiments/agent-trace/policy"
-	runtime "harukizmoe/go-exp/experiments/agent-trace/runtime"
-	session "harukizmoe/go-exp/experiments/agent-trace/session"
-	tools "harukizmoe/go-exp/experiments/agent-trace/tools"
+	agent "harukizmoe/experiments/go/experiments/agent-trace/agent"
+	config "harukizmoe/experiments/go/experiments/agent-trace/config"
+	llm "harukizmoe/experiments/go/experiments/agent-trace/llm"
+	observability "harukizmoe/experiments/go/experiments/agent-trace/observability"
+	policy "harukizmoe/experiments/go/experiments/agent-trace/policy"
+	runtime "harukizmoe/experiments/go/experiments/agent-trace/runtime"
+	session "harukizmoe/experiments/go/experiments/agent-trace/session"
+	tools "harukizmoe/experiments/go/experiments/agent-trace/tools"
 )
 
 // Config 是已经由宿主解析完成的命令运行配置。

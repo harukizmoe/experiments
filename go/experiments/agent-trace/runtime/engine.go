@@ -9,8 +9,8 @@ import (
 	"os"
 	"time"
 
-	llm "harukizmoe/go-exp/experiments/agent-trace/llm"
-	tools "harukizmoe/go-exp/experiments/agent-trace/tools"
+	llm "harukizmoe/experiments/go/experiments/agent-trace/llm"
+	tools "harukizmoe/experiments/go/experiments/agent-trace/tools"
 )
 
 // ErrMaxTurnsExceeded 表示 Runtime 在允许的最大轮次内未得到最终回答。

@@ -4,10 +4,10 @@ import (
 	"context"
 	"testing"
 
-	agent "harukizmoe/go-exp/experiments/agent-trace/agent"
-	llm "harukizmoe/go-exp/experiments/agent-trace/llm"
-	runtime "harukizmoe/go-exp/experiments/agent-trace/runtime"
-	tools "harukizmoe/go-exp/experiments/agent-trace/tools"
+	agent "harukizmoe/experiments/go/experiments/agent-trace/agent"
+	llm "harukizmoe/experiments/go/experiments/agent-trace/llm"
+	runtime "harukizmoe/experiments/go/experiments/agent-trace/runtime"
+	tools "harukizmoe/experiments/go/experiments/agent-trace/tools"
 )
 
 type finalResponseClient struct{}

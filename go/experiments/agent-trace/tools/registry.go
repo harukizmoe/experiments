@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"sort"
 
-	llm "harukizmoe/go-exp/experiments/agent-trace/llm"
+	llm "harukizmoe/experiments/go/experiments/agent-trace/llm"
 )
 
 type Registry struct {

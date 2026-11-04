@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	runtime "harukizmoe/go-exp/experiments/agent-trace/runtime"
+	runtime "harukizmoe/experiments/go/experiments/agent-trace/runtime"
 )
 
 func TestEvaluateAllowsOptionalCalculator(t *testing.T) {

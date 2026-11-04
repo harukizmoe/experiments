@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/json"
 
-	llm "harukizmoe/go-exp/experiments/agent-trace/llm"
-	tools "harukizmoe/go-exp/experiments/agent-trace/tools"
+	llm "harukizmoe/experiments/go/experiments/agent-trace/llm"
+	tools "harukizmoe/experiments/go/experiments/agent-trace/tools"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"

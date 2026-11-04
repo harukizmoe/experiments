@@ -1,7 +1,7 @@
 package agent_trace_policy
 
 import (
-	llm "harukizmoe/go-exp/experiments/agent-trace/llm"
+	llm "harukizmoe/experiments/go/experiments/agent-trace/llm"
 )
 
 // DefaultSystemPrompt 定义本实验售后咨询 Agent 的业务规则。

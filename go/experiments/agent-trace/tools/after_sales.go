@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	llm "harukizmoe/go-exp/experiments/agent-trace/llm"
+	llm "harukizmoe/experiments/go/experiments/agent-trace/llm"
 )
 
 // OrderDetailsTool 返回退货判断所需的订单事实，不执行任何订单状态变更。

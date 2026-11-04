@@ -8,10 +8,10 @@ import (
 	"sync"
 	"testing"
 
-	llm "harukizmoe/go-exp/experiments/agent-trace/llm"
-	observability "harukizmoe/go-exp/experiments/agent-trace/observability"
-	policy "harukizmoe/go-exp/experiments/agent-trace/policy"
-	runtime "harukizmoe/go-exp/experiments/agent-trace/runtime"
+	llm "harukizmoe/experiments/go/experiments/agent-trace/llm"
+	observability "harukizmoe/experiments/go/experiments/agent-trace/observability"
+	policy "harukizmoe/experiments/go/experiments/agent-trace/policy"
+	runtime "harukizmoe/experiments/go/experiments/agent-trace/runtime"
 )
 
 type capturedTool struct {

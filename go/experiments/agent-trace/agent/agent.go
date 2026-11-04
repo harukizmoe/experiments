@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 
-	llm "harukizmoe/go-exp/experiments/agent-trace/llm"
-	runtime "harukizmoe/go-exp/experiments/agent-trace/runtime"
+	llm "harukizmoe/experiments/go/experiments/agent-trace/llm"
+	runtime "harukizmoe/experiments/go/experiments/agent-trace/runtime"
 )
 
 // Agent 是无状态的 Runtime 执行适配器。

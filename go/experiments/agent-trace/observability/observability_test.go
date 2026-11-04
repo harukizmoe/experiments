@@ -5,12 +5,12 @@ import (
 	"encoding/json"
 	"testing"
 
-	agentpkg "harukizmoe/go-exp/experiments/agent-trace/agent"
-	llm "harukizmoe/go-exp/experiments/agent-trace/llm"
-	policy "harukizmoe/go-exp/experiments/agent-trace/policy"
-	runtime "harukizmoe/go-exp/experiments/agent-trace/runtime"
-	sessionpkg "harukizmoe/go-exp/experiments/agent-trace/session"
-	tools "harukizmoe/go-exp/experiments/agent-trace/tools"
+	agentpkg "harukizmoe/experiments/go/experiments/agent-trace/agent"
+	llm "harukizmoe/experiments/go/experiments/agent-trace/llm"
+	policy "harukizmoe/experiments/go/experiments/agent-trace/policy"
+	runtime "harukizmoe/experiments/go/experiments/agent-trace/runtime"
+	sessionpkg "harukizmoe/experiments/go/experiments/agent-trace/session"
+	tools "harukizmoe/experiments/go/experiments/agent-trace/tools"
 
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
