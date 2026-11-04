@@ -3,7 +3,7 @@ package agent_trace_tools
 import (
 	"context"
 	"encoding/json"
-	llm "harukizmoe/go-exp/experiments/agent-trace/llm"
+	llm "harukizmoe/experiments/go/experiments/agent-trace/llm"
 )
 
 type Tool interface {

@@ -9,13 +9,13 @@ import (
 	"syscall"
 	"time"
 
-	agent "harukizmoe/go-exp/experiments/agent-trace/agent"
-	config "harukizmoe/go-exp/experiments/agent-trace/config"
-	evalpkg "harukizmoe/go-exp/experiments/agent-trace/evaluation"
-	langfuse "harukizmoe/go-exp/experiments/agent-trace/langfuse"
-	llm "harukizmoe/go-exp/experiments/agent-trace/llm"
-	observability "harukizmoe/go-exp/experiments/agent-trace/observability"
-	tools "harukizmoe/go-exp/experiments/agent-trace/tools"
+	agent "harukizmoe/experiments/go/experiments/agent-trace/agent"
+	config "harukizmoe/experiments/go/experiments/agent-trace/config"
+	evalpkg "harukizmoe/experiments/go/experiments/agent-trace/evaluation"
+	langfuse "harukizmoe/experiments/go/experiments/agent-trace/langfuse"
+	llm "harukizmoe/experiments/go/experiments/agent-trace/llm"
+	observability "harukizmoe/experiments/go/experiments/agent-trace/observability"
+	tools "harukizmoe/experiments/go/experiments/agent-trace/tools"
 )
 
 func main() {

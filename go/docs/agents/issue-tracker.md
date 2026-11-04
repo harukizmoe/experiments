@@ -10,7 +10,7 @@
 - 添加评论：`gh issue comment <number> --body "..."`
 - 添加或移除标签：`gh issue edit <number> --add-label "..."` / `--remove-label "..."`
 - 关闭 Issue：`gh issue close <number> --reason completed`
-- GitHub 仓库：`harukizmoe/go-exp`
+- GitHub 仓库：`harukizmoe/experiments`（Go 代码在 `go/` 子目录，module 路径为 `harukizmoe/experiments/go`）
 
 ## 发布到问题追踪器
 

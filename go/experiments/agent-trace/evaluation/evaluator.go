@@ -7,7 +7,7 @@ import (
 	"strings"
 	"unicode"
 
-	agent "harukizmoe/go-exp/experiments/agent-trace/agent"
+	agent "harukizmoe/experiments/go/experiments/agent-trace/agent"
 )
 
 const (

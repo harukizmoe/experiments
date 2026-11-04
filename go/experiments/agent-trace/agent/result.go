@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"time"
 
-	llm "harukizmoe/go-exp/experiments/agent-trace/llm"
+	llm "harukizmoe/experiments/go/experiments/agent-trace/llm"
 )
 
 type ToolCallRecord struct {

@@ -28,7 +28,7 @@ experiments/
 
 ## Go 实验
 
-Go 实验统一放在 `go/`，共享一个 `go.mod`（module 名沿用 `harukizmoe/go-exp`），运行方式与约定见 [`go/README.md`](go/README.md) 与 [`go/AGENTS.md`](go/AGENTS.md)：
+Go 实验统一放在 `go/`，共享一个 `go.mod`（module 名 `harukizmoe/experiments/go`），运行方式与约定见 [`go/README.md`](go/README.md) 与 [`go/AGENTS.md`](go/AGENTS.md)：
 
 ```bash
 cd go
@@ -60,4 +60,4 @@ $EDITOR <experiment-name>/README.md
 
 ## 历史
 
-`harukizmoe/go-exp` 的全部提交历史经 `go/` 前缀重写后并入本仓库；迁移前的分支顶端保存在 `legacy/pre-migration`。
+原 `harukizmoe/go-exp` 的全部提交历史经 `go/` 前缀重写后并入本仓库；迁移前的分支顶端保存在 `legacy/pre-migration`。

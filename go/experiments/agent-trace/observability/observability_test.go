@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"testing"
 
-	agent "harukizmoe/go-exp/experiments/agent-trace/agent"
-	llm "harukizmoe/go-exp/experiments/agent-trace/llm"
-	tools "harukizmoe/go-exp/experiments/agent-trace/tools"
+	agent "harukizmoe/experiments/go/experiments/agent-trace/agent"
+	llm "harukizmoe/experiments/go/experiments/agent-trace/llm"
+	tools "harukizmoe/experiments/go/experiments/agent-trace/tools"
 
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 

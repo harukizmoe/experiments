@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	agent "harukizmoe/go-exp/experiments/agent-trace/agent"
+	agent "harukizmoe/experiments/go/experiments/agent-trace/agent"
 )
 
 func TestEvaluateChecksBusinessOutcomeAndToolOrder(t *testing.T) {

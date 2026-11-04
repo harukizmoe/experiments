@@ -9,7 +9,7 @@ import (
 	"strings"
 	"unicode"
 
-	llm "harukizmoe/go-exp/experiments/agent-trace/llm"
+	llm "harukizmoe/experiments/go/experiments/agent-trace/llm"
 )
 
 type CalculatorTool struct{}
