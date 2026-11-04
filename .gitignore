@@ -1,0 +1,36 @@
+# 构建产物
+target/
+dist/
+build/
+out/
+*.o
+*.a
+*.so
+*.dylib
+*.exe
+
+# 依赖与工具缓存
+node_modules/
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.gradle/
+obj/
+
+# 编辑器与系统
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# 本地数据与凭证
+.env
+.env.*
+!.env.example
+*.local.*
+tmp/
+*.log
