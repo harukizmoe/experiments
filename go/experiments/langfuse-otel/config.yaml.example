@@ -1,0 +1,5 @@
+# Langfuse 项目配置示例；复制为 config.yaml 后填入真实凭证。
+base_url: "https://jp.cloud.langfuse.com"
+public_key: "pk-lf-..."
+secret_key: "sk-lf-..."
+environment: "experiment"
