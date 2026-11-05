@@ -1,0 +1,24 @@
+{
+  "name": "pi-durable-semantics",
+  "private": true,
+  "type": "module",
+  "description": "实验：把 pi-durable 的语义断言变成可运行、可失败的 probe",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "scripts": {
+    "start": "node --experimental-strip-types src/ui/supervise.ts",
+    "start:server": "node --experimental-strip-types src/ui/server.ts",
+    "test": "node --experimental-strip-types --test test/*.test.ts",
+    "probe:p0": "node --experimental-strip-types src/probes/p0-baseline.ts"
+  },
+  "dependencies": {
+    "@earendil-works/pi-ai": "1.5.0",
+    "@earendil-works/pi-durable": "1.5.0",
+    "@lit/context": "^1.1.6",
+    "@material/web": "2.5.0",
+    "lit": "^3.3.1",
+    "lit-element": "^4.2.2",
+    "tslib": "^2.8.1"
+  }
+}

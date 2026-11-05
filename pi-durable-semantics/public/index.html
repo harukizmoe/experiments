@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="zh-CN">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>pi-durable 语义实验台</title>
+		<link rel="stylesheet" href="/theme.css" />
+		<!--
+			无构建：把浏览器端的裸模块名映射到本地 node_modules。
+			缺任何一条都会在控制台报 "Failed to resolve module specifier"，页面白屏。
+		-->
+		<script type="importmap">
+			{
+				"imports": {
+					"tslib": "/vendor/tslib/tslib.es6.mjs",
+					"lit": "/vendor/lit/index.js",
+					"lit/": "/vendor/lit/",
+					"lit-html": "/vendor/lit-html/lit-html.js",
+					"lit-html/": "/vendor/lit-html/",
+					"lit-element": "/vendor/lit-element/lit-element.js",
+					"lit-element/": "/vendor/lit-element/",
+					"@lit/reactive-element": "/vendor/@lit/reactive-element/reactive-element.js",
+					"@lit/reactive-element/": "/vendor/@lit/reactive-element/",
+					"@lit/context": "/vendor/@lit/context/index.js",
+					"@lit/context/": "/vendor/@lit/context/",
+					"@lit-labs/ssr-dom-shim": "/vendor/@lit-labs/ssr-dom-shim/index.js",
+					"@material/web/": "/vendor/@material/web/"
+				}
+			}
+		</script>
+		<script type="module" src="/app.js"></script>
+	</head>
+	<body>
+		<header class="appbar">
+			<div class="brand">
+				<span class="dot" id="dot" aria-hidden="true"></span>
+				<span class="title">pi-durable 语义实验台</span>
+				<span class="meta" id="meta">连接中…</span>
+			</div>
+			<div class="badges" id="badges" role="status"></div>
+			<div class="actions">
+				<md-outlined-button id="submit-short">短消息</md-outlined-button>
+				<md-filled-button id="submit-long">长消息（可打断）</md-filled-button>
+				<md-outlined-button id="compact">压缩</md-outlined-button>
+				<md-filled-tonal-button id="restart">重启</md-filled-tonal-button>
+				<md-filled-button id="kill" class="danger">kill -9</md-filled-button>
+			</div>
+		</header>
+
+		<main>
+			<section class="pane" aria-label="transcript">
+				<h2 class="pane-title">Transcript <span class="meta" id="count"></span></h2>
+				<div id="entries" class="list" role="log"></div>
+			</section>
+
+			<section class="pane inspector" aria-label="inspector">
+				<md-tabs id="tabs">
+					<md-primary-tab>Live</md-primary-tab>
+					<md-primary-tab>Inbox</md-primary-tab>
+					<md-primary-tab>Task graph</md-primary-tab>
+					<md-primary-tab>Usage</md-primary-tab>
+				</md-tabs>
+				<pre id="panel" class="panel"></pre>
+			</section>
+		</main>
+
+		<footer class="eventbar" id="events">事件流：等待首个快照…</footer>
+	</body>
+</html>

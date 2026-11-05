@@ -1,0 +1,8 @@
+# 本地存储与运行产物
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+out/
+
+# 依赖
+node_modules/

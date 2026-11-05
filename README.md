@@ -26,6 +26,14 @@ experiments/
 - 混合技术栈的实验（如 Rust 服务 + Python 脚本）放在同一个实验目录，各自保留清单。
 - 不预创建空目录；实验落地时才建目录。
 
+## 现有实验
+
+| 实验 | 内容 | 运行方式 |
+| --- | --- | --- |
+| [`pi-durable-semantics`](pi-durable-semantics) | 把 pi-durable 的提交/恢复/重放语义变成可失败的 probe，附 M3 实验台 UI | `cd pi-durable-semantics && npm start`（`npm test` 跑回归） |
+
+Go 实验见下方 `go/`。
+
 ## Go 实验
 
 Go 实验统一放在 `go/`，共享一个 `go.mod`（module 名 `harukizmoe/experiments/go`），运行方式与约定见 [`go/README.md`](go/README.md) 与 [`go/AGENTS.md`](go/AGENTS.md)：

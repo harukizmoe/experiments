@@ -1,0 +1,235 @@
+/*
+ * M3 的 baseline 配色。@material/web 只发 Sass 的 token 源文件，没有现成的 CSS 变量，
+ * 所以这里手写一份 light/dark；要动态取色时再引入 material-color-utilities。
+ * 只保留实验台用得到的语义色，不抄整套 token 表。
+ */
+:root {
+	--md-sys-color-primary: #6750a4;
+	--md-sys-color-on-primary: #ffffff;
+	--md-sys-color-primary-container: #eaddff;
+	--md-sys-color-on-primary-container: #21005d;
+	--md-sys-color-secondary-container: #e8def8;
+	--md-sys-color-on-secondary-container: #1d192b;
+	--md-sys-color-surface: #fef7ff;
+	--md-sys-color-surface-container-low: #f7f2fa;
+	--md-sys-color-surface-container: #f3edf7;
+	--md-sys-color-on-surface: #1d1b20;
+	--md-sys-color-on-surface-variant: #49454f;
+	--md-sys-color-outline: #79747e;
+	--md-sys-color-outline-variant: #cac4d0;
+	--md-sys-color-error: #b3261e;
+	--md-sys-color-on-error: #ffffff;
+	--md-sys-color-tertiary-container: #ffd8e4;
+	--md-sys-color-on-tertiary-container: #31111d;
+	--md-elevation-1: 0 1px 2px rgba(0, 0, 0, 0.3), 0 1px 3px 1px rgba(0, 0, 0, 0.15);
+	--mono: ui-monospace, "JetBrains Mono", "SFMono-Regular", Menlo, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+	:root {
+		--md-sys-color-primary: #d0bcff;
+		--md-sys-color-on-primary: #381e72;
+		--md-sys-color-primary-container: #4f378b;
+		--md-sys-color-on-primary-container: #eaddff;
+		--md-sys-color-secondary-container: #4a4458;
+		--md-sys-color-on-secondary-container: #e8def8;
+		--md-sys-color-surface: #141218;
+		--md-sys-color-surface-container-low: #1d1b20;
+		--md-sys-color-surface-container: #211f26;
+		--md-sys-color-on-surface: #e6e0e9;
+		--md-sys-color-on-surface-variant: #cac4d0;
+		--md-sys-color-outline: #938f99;
+		--md-sys-color-outline-variant: #49454f;
+		--md-sys-color-error: #f2b8b5;
+		--md-sys-color-on-error: #601410;
+		--md-sys-color-tertiary-container: #633b48;
+		--md-sys-color-on-tertiary-container: #ffd8e4;
+		--md-elevation-1: 0 1px 2px rgba(0, 0, 0, 0.6), 0 1px 3px 1px rgba(0, 0, 0, 0.4);
+	}
+}
+
+* {
+	box-sizing: border-box;
+}
+
+html,
+body {
+	height: 100%;
+	margin: 0;
+}
+
+body {
+	display: grid;
+	grid-template-rows: auto 1fr auto;
+	background: var(--md-sys-color-surface);
+	color: var(--md-sys-color-on-surface);
+	font: 14px/1.5 system-ui, "Noto Sans SC", sans-serif;
+}
+
+.appbar {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 12px;
+	align-items: center;
+	justify-content: space-between;
+	padding: 10px 16px;
+	background: var(--md-sys-color-surface-container-low);
+	box-shadow: var(--md-elevation-1);
+}
+
+.brand {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.title {
+	font-size: 18px;
+	letter-spacing: 0.1px;
+}
+
+.meta {
+	color: var(--md-sys-color-on-surface-variant);
+	font-size: 12px;
+	font-family: var(--mono);
+}
+
+.dot {
+	width: 10px;
+	height: 10px;
+	border-radius: 50%;
+	background: var(--md-sys-color-outline);
+}
+
+.dot.live {
+	background: #2e7d32;
+}
+
+.dot.dead {
+	background: var(--md-sys-color-error);
+}
+
+.badges {
+	display: flex;
+	gap: 6px;
+}
+
+.badge {
+	padding: 2px 10px;
+	border-radius: 999px;
+	font-size: 12px;
+	background: var(--md-sys-color-secondary-container);
+	color: var(--md-sys-color-on-secondary-container);
+}
+
+.badge.warn {
+	background: var(--md-sys-color-tertiary-container);
+	color: var(--md-sys-color-on-tertiary-container);
+}
+
+.badge.error {
+	background: var(--md-sys-color-error);
+	color: var(--md-sys-color-on-error);
+}
+
+.actions {
+	display: flex;
+	gap: 8px;
+	flex-wrap: wrap;
+}
+
+main {
+	display: grid;
+	grid-template-columns: minmax(320px, 1fr) minmax(360px, 1fr);
+	gap: 12px;
+	padding: 12px;
+	overflow: hidden;
+}
+
+@media (max-width: 900px) {
+	main {
+		grid-template-columns: 1fr;
+		overflow: auto;
+	}
+}
+
+.pane {
+	display: flex;
+	flex-direction: column;
+	min-height: 0;
+	background: var(--md-sys-color-surface-container);
+	border-radius: 12px;
+	padding: 8px 4px 4px 12px;
+	overflow: hidden;
+}
+
+.pane-title {
+	margin: 4px 0 8px;
+	font-size: 13px;
+	font-weight: 500;
+	letter-spacing: 0.5px;
+	text-transform: uppercase;
+	color: var(--md-sys-color-on-surface-variant);
+}
+
+#entries {
+	overflow: auto;
+}
+
+.inspector {
+	padding: 8px 12px 12px;
+}
+
+.panel {
+	margin: 8px 0 0;
+	padding: 12px;
+	flex: 1;
+	min-height: 0;
+	overflow: auto;
+	background: var(--md-sys-color-surface-container-low);
+	border-radius: 8px;
+	font-family: var(--mono);
+	font-size: 12px;
+	white-space: pre-wrap;
+	word-break: break-word;
+}
+
+.eventbar {
+	padding: 6px 16px;
+	background: var(--md-sys-color-surface-container-low);
+	border-top: 1px solid var(--md-sys-color-outline-variant);
+	font-family: var(--mono);
+	font-size: 12px;
+	color: var(--md-sys-color-on-surface-variant);
+	overflow-x: auto;
+	white-space: nowrap;
+}
+
+.row {
+	display: flex;
+	gap: 8px;
+	align-items: baseline;
+	padding: 6px 8px;
+	border-radius: 8px;
+}
+
+.row.gap {
+	background: var(--md-sys-color-tertiary-container);
+	color: var(--md-sys-color-on-tertiary-container);
+	font-family: var(--mono);
+	font-size: 12px;
+}
+
+.kind {
+	font-family: var(--mono);
+	font-size: 11px;
+	padding: 1px 6px;
+	border-radius: 6px;
+	background: var(--md-sys-color-secondary-container);
+	color: var(--md-sys-color-on-secondary-container);
+	white-space: nowrap;
+}
+
+.text {
+	overflow-wrap: anywhere;
+}
