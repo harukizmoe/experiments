@@ -8,6 +8,7 @@
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
 import { agentOf, installAnswerScript, openHarness } from "../harness.ts";
+import { ProbeDoc } from "../probes/fixtures.ts";
 import { registryWithSideEffect } from "../probes/tool.ts";
 
 const step = process.env.STEP;
@@ -84,6 +85,29 @@ switch (step) {
 		// 若没被杀掉，说明注入点没命中，直接失败比静默继续好。
 		await new Promise((resolve) => setTimeout(resolve, 5000));
 		throw new Error("工具没有按预期崩溃");
+	}
+
+	case "deferred-commit": {
+		// 第一次提交把文档真正建出来（新文档不能延迟存储），第二次用 deferred 改值后立刻崩溃。
+		await root.commit(
+			async (tx) => {
+				const doc = await tx.doc(ProbeDoc, root.id);
+				doc.note = "stored";
+				doc.seq = 1;
+			},
+			BACKGROUND_CONTEXT,
+		);
+		await root.commit(
+			async (tx) => {
+				const doc = await tx.doc(ProbeDoc, root.id);
+				doc.note = "deferred";
+				doc.seq = 2;
+			},
+			BACKGROUND_CONTEXT,
+			{ persistence: { kind: "deferred", withinMs: 60_000 } },
+		);
+		process.kill(process.pid, "SIGKILL");
+		break;
 	}
 
 	case "tool-resume": {

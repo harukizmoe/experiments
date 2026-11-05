@@ -13,14 +13,14 @@
 | 1 | 提交先于可见：submit 是唯一的准入边界 | 左右夹逼：submit 前杀 → 无输入；submit 返回后立刻杀 → 输入已在存储，resume 后 run 跑完 | **已验** |
 | 2 | `commit()` 原子：回调抛错则全部回滚 | 回调里先 append 再 throw，再杀进程，存储不应留半个 entry | **已验** |
 | 3 | 重复 `requestId` 幂等 | 跨重启用同一 id submit，只能有一个 submission | **已验** |
-| 4 | deferred commit：watch 立刻看到，存储晚到 | `withinMs` 内杀进程，这段内容应丢失 | 待测 |
+| 4 | deferred commit：watch 立刻看到，存储晚到 | `withinMs` 内杀进程，这次修改应丢失、已存储的历史值保留 | **已验** |
 | 5 | 工具崩溃点在 "intent 已提交、结果未提交" | 工具在 `execute()` 里自杀，重启后看该 call 的归属 | **已验**（并入 6/7） |
 | 6 | 默认不重跑工具，模型收到 `interrupted` | 不声明 replay，副作用计数应保持 1 | **已验** |
 | 7 | `replay: "safe"` 会重跑且不保证幂等 | 声明后重跑，副作用计数变 2 | **已验** |
 | 8 | `restartLimit` 用满后任务被放弃 | 每次执行都自杀，看是否收敛到 `restart_limit` | **已验**（limit=2） |
 | 9 | 重启后任务状态是 `pending` 而非 `running` | 重启但先不 resume，读 `inspect()` | **已验** |
-| 10 | 睡眠是状态，不占 invocation | `sleepUntil` 期间观察任务状态与进程存活 | 待测 |
-| 11 | 假时钟可推进，跨重启按 `until` 立即执行 | 注入 `now`/`setTimer` | 待测 |
+| 10 | 睡眠是状态，不占 invocation | `sleepUntil` 后 `inspect()` 应显示 `sleeping`，且无副作用、`wake()` 给出 `at` | **已验** |
+| 11 | 假时钟可推进，跨重启按 `until` 立即执行 | 注入 `now`/`setTimer`，推进时钟；另一次打开用已过期的时钟 | **已验** |
 | 12 | inbox 落位顺序（steer / followUp / write / reject） | busy 时依次提交，看顺序与异常 | 待测 |
 | 13 | watch 窗口 50/100 的 splice 与 gap | 连写 120 条，记录每次回调窗口 | 待测 |
 | 14 | abort 自下而上级联 | 父任务持有子任务，abort 父 | 待测 |
@@ -51,6 +51,9 @@ npm run probe:p1
 
 # P2：工具重跑策略 / restartLimit（工具在 execute() 里自杀）
 npm run probe:p2
+
+# P3：睡眠 / 假时钟 / 跨重启到期 / deferred commit 丢失窗口
+npm run probe:p3
 
 # 回归测试（P0 语义 + 视图快照 + import map 覆盖）
 npm test
@@ -110,10 +113,24 @@ P1-1 的做法值得记一笔：`submit()` 内部没有可注入的崩溃点，�
 
 P2-3 的操作细节值得记：必须先用一次 `tool-crash` 制造"待恢复的 run"，再反复 resume；否则 resume 时库里没有任务，看起来像"干净退出"，其实是空跑（我第一次就踩了这个假阳性）。
 
+**P3 实测（2026-11，1.5.0）**
+
+| probe | 观察 | 判定 |
+| --- | --- | --- |
+| P3-10 | 建任务后 `inspect()` 显示 `sleeping`，`until` 与传入的 `at` 相等，`wake()` 返回 `{active:false, at:until}`，副作用 0 次 | 睡眠确实只是存储里的状态，进程里没有待跑的 invocation |
+| P3-11 | 假时钟推进到 `until` 后 deliver phase 才写副作用 | 唤醒由宿主时钟驱动，`setTimer` 可以被完全接管 |
+| P3-12 | 第一次打开只睡不交付，关闭；第二次用"已过期"的时钟打开，`resume()` 后立刻交付 | 睡眠跨进程存活，过期即执行（不需要补触发时间点） |
+| P3-4 | 先普通提交写入 `{note:"stored",seq:1}`，再 deferred 提交 `seq:2` 后立刻 `SIGKILL`；重启读到 `stored/1` | deferred 窗口内的修改确实会丢，已存储的值完好 |
+
+两个实现细节：
+
+1. **假时钟必须同时替换 `now` 与 `setTimer`**。只换 `now`，调度器仍按真实 `setTimeout` 唤醒；只换 `setTimer`，睡眠算出的截止时刻还是真实时间。两者任一漏掉，P3-11 都会假通过或假失败。
+2. **`inspect()` 的 `state.kind` ≠ `TaskState.status`**。前者是 `running|pending|waiting|sleeping|completing|blocked`，后者是持久状态的 `pending|running|waiting|sleeping|completing|terminal`。第一版 P3-10 用错字段，得到 `sleeping=false` 却其实一切正常——这类字段混淆会让结论正好反过来，值得先写断言再读值。
+
 **踩到的坑（比结论更值钱）**
 
 1. **faux 的脚本队列活在进程内存里**。第一次做崩溃实验时，脚本用完就没了，重启后的重试直接拿到 `model_error: No more faux responses queued` —— 这不是 durable 的缺陷，而是"外部模型不会随我们的进程一起消失"这个前提在测试夹具里没被建模。解法是 `installAnswerScript()`：工厂每次被取用时把自己重新排回队尾。**任何用 faux 测恢复的实验都必须先解决这一点**，否则测到的是夹具的死亡。
 2. **import map 漏一项就是白屏**：`@material/web → lit → lit-element/lit-element.js`，而 `lit-element` 又是 via `lit-html → @lit-labs/ssr-dom-shim`。这些都不在 `package.json` 的直接依赖里，服务端也照样 200，只有浏览器报 `does not resolve to a valid URL`。因此加了一条静态断言扫描 vendor 里的裸模块名。
 3. **视图与 Harness 必须同进程**：`watch()` 反映的是本进程的提交，`readOnly` 只保证"打开时不恢复、拒绝写入"，并不会跨进程推送别人的提交 [INFERENCE]。想跨进程实时只能走 chord 的 link —— 那条路留给产品，不在本实验。
 
-**待验证**：上表 4、10–14 未测。下一步是 P3（`sleepUntil` + 假时钟跨重启）与 deferred commit 的丢失窗口（#4）；这两项都需要把 `now` / `setTimer` 注入进 Harness。
+**待验证**：上表 12–14 未测（inbox 落位顺序、watch 窗口 splice、abort 级联）。前 11 条已全部实测通过。

@@ -14,7 +14,13 @@ import {
 	type FauxProviderHandle,
 	type FauxResponseFactory,
 } from "@earendil-works/pi-ai";
-import { Harness, createRegistry, type HarnessSettings, type Registry } from "@earendil-works/pi-durable";
+import {
+	Harness,
+	createRegistry,
+	type HarnessSettings,
+	type Registry,
+	type SetTimer,
+} from "@earendil-works/pi-durable";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 
 /** 会话默认 agent 的模型取自 faux 自己的目录，避免硬编码 provider/modelId 与依赖版本脱钩。 */
@@ -30,6 +36,10 @@ export interface OpenHarnessOptions {
 	registry?: Registry;
 	/** 运行策略（重试、restartLimit 等）。恢复实验里必须和崩溃前一致。 */
 	settings?: HarnessSettings;
+	/** 宿主时钟（毫秒）。睡眠截止时刻存在这个时钟上，恢复实验里必须与崩溃前一致。 */
+	now?: () => number;
+	/** 宿主 timer；假时钟必须同时替换它与 `now`，否则调度器仍按真实时间唤醒。 */
+	setTimer?: SetTimer;
 	/**
 	 * faux 的流式速率（token/秒）。默认 0 表示一次性给出整段；
 	 * 崩溃 probe 需要一个能"卡在流中间"的窗口，因此 UI 会把它调慢。
@@ -52,6 +62,8 @@ export async function openHarness({
 	tokensPerSecond,
 	registry,
 	settings,
+	now,
+	setTimer,
 }: OpenHarnessOptions): Promise<OpenedHarness> {
 	const faux = fauxProvider(tokensPerSecond === undefined ? undefined : { tokensPerSecond });
 	const models = createModels();
@@ -60,7 +72,13 @@ export async function openHarness({
 	const storage = await openNodeSqliteStorage(dbPath);
 	const harness = await Harness.open(
 		storage,
-		{ models, registry: registry ?? createRegistry(), ...(settings === undefined ? {} : { settings }) },
+		{
+			models,
+			registry: registry ?? createRegistry(),
+			...(settings === undefined ? {} : { settings }),
+			...(now === undefined ? {} : { now }),
+			...(setTimer === undefined ? {} : { setTimer }),
+		},
 		BACKGROUND_CONTEXT,
 	);
 
