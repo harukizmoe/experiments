@@ -21,9 +21,9 @@
 | 9 | 重启后任务状态是 `pending` 而非 `running` | 重启但先不 resume，读 `inspect()` | **已验** |
 | 10 | 睡眠是状态，不占 invocation | `sleepUntil` 后 `inspect()` 应显示 `sleeping`，且无副作用、`wake()` 给出 `at` | **已验** |
 | 11 | 假时钟可推进，跨重启按 `until` 立即执行 | 注入 `now`/`setTimer`，推进时钟；另一次打开用已过期的时钟 | **已验** |
-| 12 | inbox 落位顺序（steer / followUp / write / reject） | busy 时依次提交，看顺序与异常 | 待测 |
-| 13 | watch 窗口 50/100 的 splice 与 gap | 连写 120 条，记录每次回调窗口 | 待测 |
-| 14 | abort 自下而上级联 | 父任务持有子任务，abort 父 | 待测 |
+| 12 | inbox 落位顺序（steer / followUp / write / reject） | busy 时依次提交，看顺序与异常 | **已验** |
+| 13 | watch 窗口 50/100 的 splice 与 gap | 连写 120 条，记录每次回调窗口 | **已验** |
+| 14 | abort 自下而上级联 | 父任务持有子任务，abort 父 | **已验** |
 | 15 | 崩溃中的模型请求算失败尝试并按 retry 重发 | 流中间 `SIGKILL`，看 `pi.live.generation.retry` 与最终回答 | **已验**（见结论） |
 
 范围围栏：不测 provider 差异（全程 faux）、不测 Cloudflare DO 的 alarm/heartbeat、不测 codemode / MCP / 图片处理。
@@ -54,6 +54,9 @@ npm run probe:p2
 
 # P3：睡眠 / 假时钟 / 跨重启到期 / deferred commit 丢失窗口
 npm run probe:p3
+
+# P4：inbox 顺序 / watch 窗口 splice / abort 级联
+npm run probe:p4
 
 # 回归测试（P0 语义 + 视图快照 + import map 覆盖）
 npm test
@@ -127,10 +130,20 @@ P2-3 的操作细节值得记：必须先用一次 `tool-crash` 制造"待恢复
 1. **假时钟必须同时替换 `now` 与 `setTimer`**。只换 `now`，调度器仍按真实 `setTimeout` 唤醒；只换 `setTimer`，睡眠算出的截止时刻还是真实时间。两者任一漏掉，P3-11 都会假通过或假失败。
 2. **`inspect()` 的 `state.kind` ≠ `TaskState.status`**。前者是 `running|pending|waiting|sleeping|completing|blocked`，后者是持久状态的 `pending|running|waiting|sleeping|completing|terminal`。第一版 P3-10 用错字段，得到 `sleeping=false` 却其实一切正常——这类字段混淆会让结论正好反过来，值得先写断言再读值。
 
+**P4 实测（2026-11，1.5.0）**
+
+| probe | 观察 | 判定 |
+| --- | --- | --- |
+| P4-12 | busy 期间：`pi.inbox` 里是 `followUp,steer`；`app.note` 的 write 立刻进了 transcript（甚至排在 steer 之前）；`whenBusy:"reject"` 抛 `ConversationBusy` | 队列顺序与"write 不排队"的规则成立 |
+| P4-13 | 连写 120 条：窗口 `0→100` 后一次性 splice 回 50，再涨到 **69**，`before` 有值 | `min=50/max=100` 与文档一致；splice 只发生一次，不是逐条丢弃 |
+| P4-14 | abort 父任务后日志顺序为 `child abort → parent abort` | 取消自下而上，子任务先收尾 |
+
+P4-13 的期望值值得算清楚：120 条 → 到第 100 条时满窗，第 101 条触发 splice 回 50（丢 50），再进来 19 条，最终 69。第一版断言写成"最终 50"必错——**splice 是一次性的，之后继续增长**。
+
 **踩到的坑（比结论更值钱）**
 
 1. **faux 的脚本队列活在进程内存里**。第一次做崩溃实验时，脚本用完就没了，重启后的重试直接拿到 `model_error: No more faux responses queued` —— 这不是 durable 的缺陷，而是"外部模型不会随我们的进程一起消失"这个前提在测试夹具里没被建模。解法是 `installAnswerScript()`：工厂每次被取用时把自己重新排回队尾。**任何用 faux 测恢复的实验都必须先解决这一点**，否则测到的是夹具的死亡。
 2. **import map 漏一项就是白屏**：`@material/web → lit → lit-element/lit-element.js`，而 `lit-element` 又是 via `lit-html → @lit-labs/ssr-dom-shim`。这些都不在 `package.json` 的直接依赖里，服务端也照样 200，只有浏览器报 `does not resolve to a valid URL`。因此加了一条静态断言扫描 vendor 里的裸模块名。
 3. **视图与 Harness 必须同进程**：`watch()` 反映的是本进程的提交，`readOnly` 只保证"打开时不恢复、拒绝写入"，并不会跨进程推送别人的提交 [INFERENCE]。想跨进程实时只能走 chord 的 link —— 那条路留给产品，不在本实验。
 
-**待验证**：上表 12–14 未测（inbox 落位顺序、watch 窗口 splice、abort 级联）。前 11 条已全部实测通过。
+**待验证**：台账 15 条已全部实测通过；未覆盖的只剩范围围栏里写明的东西（provider 差异、Cloudflare DO 的 alarm/heartbeat、codemode/MCP/图片）。
