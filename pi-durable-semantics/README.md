@@ -10,9 +10,9 @@
 
 | # | 断言（来自 README / 类型定义） | 判定方式 | 状态 |
 | --- | --- | --- | --- |
-| 1 | 提交先于可见：watch 不会先于提交暴露状态 | 提交前 `SIGKILL`，重启后 transcript 里不应出现该输入 | 待测 |
-| 2 | `commit()` 原子：回调抛错则全部回滚 | 回调里先 append 再 throw，存储不应留半个 entry | 待测 |
-| 3 | 重复 `requestId` 幂等 | 跨重启用同一 id submit，只能有一个 submission | 待测 |
+| 1 | 提交先于可见：submit 是唯一的准入边界 | 左右夹逼：submit 前杀 → 无输入；submit 返回后立刻杀 → 输入已在存储，resume 后 run 跑完 | **已验** |
+| 2 | `commit()` 原子：回调抛错则全部回滚 | 回调里先 append 再 throw，再杀进程，存储不应留半个 entry | **已验** |
+| 3 | 重复 `requestId` 幂等 | 跨重启用同一 id submit，只能有一个 submission | **已验** |
 | 4 | deferred commit：watch 立刻看到，存储晚到 | `withinMs` 内杀进程，这段内容应丢失 | 待测 |
 | 5 | phase 内部无进度，重跑从顶部 | 工具里先写文件再杀，副作用应重复 | 待测 |
 | 6 | 默认不重跑工具，模型收到 `interrupted` | 同上但不声明 replay | 待测 |
@@ -45,6 +45,9 @@ npm install --ignore-scripts
 
 # P0：faux 接线 + 一次提交（自检，不依赖 UI）
 npm run probe:p0
+
+# P1：提交边界 / commit 原子性 / requestId 幂等（每个都真 SIGKILL 一个子进程）
+npm run probe:p1
 
 # 回归测试（P0 语义 + 视图快照 + import map 覆盖）
 npm test
@@ -82,10 +85,21 @@ DB_PATH=out/session.sqlite PORT=7788 npm start
 | 默认 retry | `enabled: true, maxRetries: 3, baseDelayMs: 2000`（取自 `dist/harness/agent.js`） | 一致 |
 | watch 窗口默认值 | `min 50 / max 100`（取自 `dist/harness/view.d.ts`），splice 行为待测 | 待测 |
 
+**P1 实测（2026-11，1.5.0）**
+
+| probe | 观察 | 判定 |
+| --- | --- | --- |
+| P1-1a | submit 之前 `SIGKILL`，重启后 `entries=0` | 输入压根没进存储 |
+| P1-1b | `submit()` resolve 后立刻 `SIGKILL`，重启读到 `pi.user`；`resume()` 后变成 `pi.user,pi.assistant` | 准入边界就是 `submit()` 的返回时刻，且未完成的 run 会被接上 |
+| P1-2 | commit 回调里 `appendEntry` 后抛错，杀进程重启，残留 entry 为**无** | 原子批，不是"写了一半" |
+| P1-3 | 跨进程用同一 `requestId` 重发，沿用原 submission（id 8），`pi.user` 仍只有 1 条 | 幂等在存储层，不靠进程内存 |
+
+P1-1 的做法值得记一笔：`submit()` 内部没有可注入的崩溃点，所以用"前/后夹逼"代替"崩在中间"——左半边证明没提交就没有，右半边证明已提交就有。这比假装能精确命中窗口更诚实，也确实能把边界钉死在 `submit()` 的 resolve 上。
+
 **踩到的坑（比结论更值钱）**
 
 1. **faux 的脚本队列活在进程内存里**。第一次做崩溃实验时，脚本用完就没了，重启后的重试直接拿到 `model_error: No more faux responses queued` —— 这不是 durable 的缺陷，而是"外部模型不会随我们的进程一起消失"这个前提在测试夹具里没被建模。解法是 `installAnswerScript()`：工厂每次被取用时把自己重新排回队尾。**任何用 faux 测恢复的实验都必须先解决这一点**，否则测到的是夹具的死亡。
 2. **import map 漏一项就是白屏**：`@material/web → lit → lit-element/lit-element.js`，而 `lit-element` 又是 via `lit-html → @lit-labs/ssr-dom-shim`。这些都不在 `package.json` 的直接依赖里，服务端也照样 200，只有浏览器报 `does not resolve to a valid URL`。因此加了一条静态断言扫描 vendor 里的裸模块名。
 3. **视图与 Harness 必须同进程**：`watch()` 反映的是本进程的提交，`readOnly` 只保证"打开时不恢复、拒绝写入"，并不会跨进程推送别人的提交 [INFERENCE]。想跨进程实时只能走 chord 的 link —— 那条路留给产品，不在本实验。
 
-**待验证**：上表 1–14 全部未测。当前只完成了 P0（faux 接线）与 U0（一屏 + 崩溃重启可见），这两步是后续 probe 的地基。
+**待验证**：上表 4–14 未测。下一步是 P2（工具重跑与 `replay` 策略、`restartLimit`），它需要先有一个会写入副作用的工具，再在工具执行中间自杀。
